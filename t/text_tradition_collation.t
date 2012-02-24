@@ -10,6 +10,50 @@ $| = 1;
 {
 use Text::Tradition;
 
+my $cxfile = 't/data/Collatex-16.xml';
+my $t = Text::Tradition->new( 
+    'name'  => 'inline', 
+    'input' => 'CollateX',
+    'file'  => $cxfile,
+    );
+my $c = $t->collation;
+
+my $rno = scalar $c->readings;
+# Split n21 for testing purposes
+my $new_r = $c->add_reading( { 'id' => 'n21p0', 'text' => 'un', 'join_next' => 1 } );
+my $old_r = $c->reading( 'n21' );
+$old_r->alter_text( 'to' );
+$c->del_path( 'n20', 'n21', 'A' );
+$c->add_path( 'n20', 'n21p0', 'A' );
+$c->add_path( 'n21p0', 'n21', 'A' );
+$c->flatten_ranks();
+ok( $c->reading( 'n21p0' ), "New reading exists" );
+is( scalar $c->readings, $rno, "Reading add offset by flatten_ranks" );
+
+# Combine n3 and n4
+$c->merge_readings( 'n3', 'n4', 1 );
+ok( !$c->reading('n4'), "Reading n4 is gone" );
+is( $c->reading('n3')->text, 'with his', "Reading n3 has both words" );
+
+# Collapse n25 and n26
+$c->merge_readings( 'n25', 'n26' );
+ok( !$c->reading('n26'), "Reading n26 is gone" );
+is( $c->reading('n25')->text, 'rood', "Reading n25 has an unchanged word" );
+
+# Combine n21 and n21p0
+my $remaining = $c->reading('n21');
+$remaining ||= $c->reading('n22');  # one of these should still exist
+$c->merge_readings( 'n21p0', $remaining, 1 );
+ok( !$c->reading('n21'), "Reading $remaining is gone" );
+is( $c->reading('n21p0')->text, 'unto', "Reading n21p0 merged correctly" );
+}
+
+
+
+# =begin testing
+{
+use Text::Tradition;
+
 my $READINGS = 311;
 my $PATHS = 361;
 
@@ -57,36 +101,13 @@ my $t = Text::Tradition->new(
 my $c = $t->collation;
 
 # Make an svg
-my $svg = $c->as_svg;
-is( substr( $svg, 0, 5 ), '<?xml', "Got XML doc for svg" );
-ok( $c->has_cached_svg, "SVG was cached" );
-is( $c->as_svg, $svg, "Cached SVG returned upon second call" );
+my $table = $c->alignment_table;
+ok( $c->has_cached_table, "Alignment table was cached" );
+is( $c->alignment_table, $table, "Cached table returned upon second call" );
 $c->calculate_ranks;
-is( $c->as_svg, $svg, "Cached SVG retained with no rank change" );
+is( $c->alignment_table, $table, "Cached table retained with no rank change" );
 $c->add_relationship( 'n9', 'n23', { 'type' => 'spelling' } );
-isnt( $c->as_svg, $svg, "SVG changed after relationship add" );
-}
-
-
-
-# =begin testing
-{
-use Text::Tradition;
-
-my $cxfile = 't/data/Collatex-16.xml';
-my $t = Text::Tradition->new( 
-    'name'  => 'inline', 
-    'input' => 'CollateX',
-    'file'  => $cxfile,
-    );
-my $c = $t->collation;
-
-isnt( $c->reading('n23')->rank, $c->reading('n9')->rank, "Rank skew exists" );
-$c->add_relationship( 'n23', 'n9', { 'type' => 'collated', 'scope' => 'local' } );
-is( scalar $c->relationships, 4, "Found all expected relationships" );
-$c->remove_collations;
-is( scalar $c->relationships, 3, "Collated relationships now gone" );
-is( $c->reading('n23')->rank, $c->reading('n9')->rank, "Aligned ranks were preserved" );
+isnt( $c->alignment_table, $table, "Alignment table changed after relationship add" );
 }
 
 

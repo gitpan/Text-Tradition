@@ -13,15 +13,15 @@
 
 #     ABSTRACT => q[a software model for a set of collated texts]
 #     AUTHOR => [q[Tara L Andrews <aurum@cpan.org>]]
-#     BUILD_REQUIRES => { Test::Warn=>q[0], ExtUtils::MakeMaker=>q[6.62] }
+#     BUILD_REQUIRES => { Test::Warn=>q[0], ExtUtils::MakeMaker=>q[6.42] }
 #     CONFIGURE_REQUIRES => {  }
 #     DISTNAME => q[Text-Tradition]
 #     LICENSE => q[perl]
 #     MIN_PERL_VERSION => q[5.012]
 #     NAME => q[Text::Tradition]
 #     NO_META => q[1]
-#     PREREQ_PM => { IPC::Run=>q[0], KiokuDB::GC::Naive=>q[0], Bio::Phylo::IO=>q[0], File::Which=>q[0], Graph=>q[0], File::chdir=>q[0], Moose::Util::TypeConstraints=>q[0], XML::LibXML::XPathContext=>q[0], Module::Load=>q[0], StackTrace::Auto=>q[0], Text::CSV_XS=>q[0], Text::CSV::Simple=>q[0], Algorithm::Diff=>q[0], Moose=>q[0], KiokuX::Model=>q[0], ExtUtils::MakeMaker=>q[6.62], KiokuDB::Backend::DBI=>q[0], Test::Warn=>q[0], TryCatch=>q[0], Graph::Reader::Dot=>q[0], Throwable::X=>q[0], XML::LibXML=>q[0], JSON=>q[0], KiokuDB::TypeMap::Entry::Naive=>q[0], KiokuDB::TypeMap=>q[0] }
-#     VERSION => q[0.1]
+#     PREREQ_PM => { IPC::Run=>q[0], KiokuDB::GC::Naive=>q[0], Bio::Phylo::IO=>q[0], File::Which=>q[0], Graph=>q[0], File::chdir=>q[0], Moose::Util::TypeConstraints=>q[0], XML::LibXML::XPathContext=>q[0], Module::Load=>q[0], StackTrace::Auto=>q[0], Text::CSV_XS=>q[0], Text::CSV::Simple=>q[0], Algorithm::Diff=>q[0], DBI=>q[0], Moose=>q[0], KiokuX::Model=>q[0], ExtUtils::MakeMaker=>q[6.42], KiokuDB::Backend::DBI=>q[0], Test::Warn=>q[0], TryCatch=>q[0], Graph::Reader::Dot=>q[0], Throwable::X=>q[0], XML::LibXML=>q[0], JSON=>q[0], KiokuDB::TypeMap::Entry::Naive=>q[0], KiokuDB::TypeMap=>q[0] }
+#     VERSION => q[0.2]
 #     VERSION_FROM => q[lib/Text/Tradition.pm]
 #     dist => { PREOP=>q[$(PERL) -I. "-MModule::Install::Admin" -e "dist_preop(q($(DISTVNAME)))"] }
 #     realclean => { FILES=>q[MYMETA.yml] }
@@ -34,21 +34,21 @@
 # These definitions are from config.sh (via /opt/local/lib/perl5/5.12.3/darwin-multi-2level/Config.pm).
 # They may have been overridden via Makefile.PL or on the command line.
 AR = ar
-CC = /Developer/usr/bin/clang
+CC = /usr/bin/gcc-4.2
 CCCDLFLAGS =  
 CCDLFLAGS =  
 DLEXT = bundle
 DLSRC = dl_dlopen.xs
 EXE_EXT = 
 FULL_AR = /usr/bin/ar
-LD = env MACOSX_DEPLOYMENT_TARGET=10.3 /Developer/usr/bin/clang
+LD = env MACOSX_DEPLOYMENT_TARGET=10.6 /usr/bin/gcc-4.2
 LDDLFLAGS = -L/opt/local/lib -arch x86_64 -bundle -undefined dynamic_lookup -fstack-protector
 LDFLAGS = -L/opt/local/lib -arch x86_64 -fstack-protector
-LIBC = 
+LIBC = /usr/lib/libc.dylib
 LIB_EXT = .a
 OBJ_EXT = .o
 OSNAME = darwin
-OSVERS = 11.2.0
+OSVERS = 10.6.0
 RANLIB = ranlib
 SITELIBEXP = /opt/local/lib/perl5/site_perl/5.12.3
 SITEARCHEXP = /opt/local/lib/perl5/site_perl/5.12.3/darwin-multi-2level
@@ -63,11 +63,11 @@ DIRFILESEP = /
 DFSEP = $(DIRFILESEP)
 NAME = Text::Tradition
 NAME_SYM = Text_Tradition
-VERSION = 0.1
+VERSION = 0.2
 VERSION_MACRO = VERSION
-VERSION_SYM = 0_1
+VERSION_SYM = 0_2
 DEFINE_VERSION = -D$(VERSION_MACRO)=\"$(VERSION)\"
-XS_VERSION = 0.1
+XS_VERSION = 0.2
 XS_VERSION_MACRO = XS_VERSION
 XS_DEFINE_VERSION = -D$(XS_VERSION_MACRO)=\"$(XS_VERSION)\"
 INST_ARCHLIB = blib/arch
@@ -168,6 +168,7 @@ O_FILES  =
 H_FILES  = 
 MAN1PODS = 
 MAN3PODS = lib/Text/Tradition.pm \
+	lib/Text/Tradition/Analysis.pm \
 	lib/Text/Tradition/Collation.pm \
 	lib/Text/Tradition/Collation/Reading.pm \
 	lib/Text/Tradition/Collation/Relationship.pm \
@@ -344,7 +345,7 @@ RCS_LABEL = rcs -Nv$(VERSION_SYM): -q
 DIST_CP = best
 DIST_DEFAULT = tardist
 DISTNAME = Text-Tradition
-DISTVNAME = Text-Tradition-0.1
+DISTVNAME = Text-Tradition-0.2
 
 
 # --- MakeMaker macro section:
@@ -499,6 +500,7 @@ POD2MAN = $(POD2MAN_EXE)
 manifypods : pure_all  \
 	lib/Text/Tradition/Error.pm \
 	lib/Text/Tradition/Parser/Self.pm \
+	lib/Text/Tradition/Analysis.pm \
 	lib/Text/Tradition.pm \
 	lib/Text/Tradition/Parser/BaseText.pm \
 	lib/Text/Tradition/Collation/Reading.pm \
@@ -510,10 +512,10 @@ manifypods : pure_all  \
 	lib/Text/Tradition/Collation/RelationshipStore.pm \
 	lib/Text/Tradition/Parser/CollateText.pm \
 	lib/Text/Tradition/Stemma.pm \
-	lib/Text/Tradition/Collation/Relationship.pm \
-	lib/Text/Tradition/Parser/CTE.pm \
-	lib/Text/Tradition/Parser/TEI.pm \
 	lib/Text/Tradition/Collation.pm \
+	lib/Text/Tradition/Parser/TEI.pm \
+	lib/Text/Tradition/Parser/CTE.pm \
+	lib/Text/Tradition/Collation/Relationship.pm \
 	lib/Text/Tradition/Parser/Tabular.pm \
 	lib/Text/Tradition/Witness.pm \
 	lib/Text/Tradition/Parser/CollateX.pm \
@@ -521,6 +523,7 @@ manifypods : pure_all  \
 	$(NOECHO) $(POD2MAN) --section=3 --perm_rw=$(PERM_RW) \
 	  lib/Text/Tradition/Error.pm $(INST_MAN3DIR)/Text::Tradition::Error.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/Self.pm $(INST_MAN3DIR)/Text::Tradition::Parser::Self.$(MAN3EXT) \
+	  lib/Text/Tradition/Analysis.pm $(INST_MAN3DIR)/Text::Tradition::Analysis.$(MAN3EXT) \
 	  lib/Text/Tradition.pm $(INST_MAN3DIR)/Text::Tradition.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/BaseText.pm $(INST_MAN3DIR)/Text::Tradition::Parser::BaseText.$(MAN3EXT) \
 	  lib/Text/Tradition/Collation/Reading.pm $(INST_MAN3DIR)/Text::Tradition::Collation::Reading.$(MAN3EXT) \
@@ -532,10 +535,10 @@ manifypods : pure_all  \
 	  lib/Text/Tradition/Collation/RelationshipStore.pm $(INST_MAN3DIR)/Text::Tradition::Collation::RelationshipStore.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/CollateText.pm $(INST_MAN3DIR)/Text::Tradition::Parser::CollateText.$(MAN3EXT) \
 	  lib/Text/Tradition/Stemma.pm $(INST_MAN3DIR)/Text::Tradition::Stemma.$(MAN3EXT) \
-	  lib/Text/Tradition/Collation/Relationship.pm $(INST_MAN3DIR)/Text::Tradition::Collation::Relationship.$(MAN3EXT) \
-	  lib/Text/Tradition/Parser/CTE.pm $(INST_MAN3DIR)/Text::Tradition::Parser::CTE.$(MAN3EXT) \
-	  lib/Text/Tradition/Parser/TEI.pm $(INST_MAN3DIR)/Text::Tradition::Parser::TEI.$(MAN3EXT) \
 	  lib/Text/Tradition/Collation.pm $(INST_MAN3DIR)/Text::Tradition::Collation.$(MAN3EXT) \
+	  lib/Text/Tradition/Parser/TEI.pm $(INST_MAN3DIR)/Text::Tradition::Parser::TEI.$(MAN3EXT) \
+	  lib/Text/Tradition/Parser/CTE.pm $(INST_MAN3DIR)/Text::Tradition::Parser::CTE.$(MAN3EXT) \
+	  lib/Text/Tradition/Collation/Relationship.pm $(INST_MAN3DIR)/Text::Tradition::Collation::Relationship.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/Tabular.pm $(INST_MAN3DIR)/Text::Tradition::Parser::Tabular.$(MAN3EXT) \
 	  lib/Text/Tradition/Witness.pm $(INST_MAN3DIR)/Text::Tradition::Witness.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/CollateX.pm $(INST_MAN3DIR)/Text::Tradition::Parser::CollateX.$(MAN3EXT) \
@@ -897,13 +900,14 @@ testdb_static :: testdb_dynamic
 # --- MakeMaker ppd section:
 # Creates a PPD (Perl Package Description) for a binary distribution.
 ppd :
-	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="0.1">' > $(DISTNAME).ppd
+	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="0.2">' > $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <ABSTRACT>a software model for a set of collated texts</ABSTRACT>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <AUTHOR>Tara L Andrews &lt;aurum@cpan.org&gt;</AUTHOR>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <IMPLEMENTATION>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <PERLCORE VERSION="5,012,0,0" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Algorithm::Diff" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Bio::Phylo::IO" />' >> $(DISTNAME).ppd
+	$(NOECHO) $(ECHO) '        <REQUIRE NAME="DBI::" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="File::Which" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="File::chdir" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Graph::" />' >> $(DISTNAME).ppd
@@ -967,7 +971,7 @@ pm_to_blib : $(FIRST_MAKEFILE) $(TO_INST_PM)
 
 
 # End.
-# Postamble by Module::Install 1.04
+# Postamble by Module::Install 1.00
 # --- Module::Install::Admin::Makefile section:
 
 realclean purge ::

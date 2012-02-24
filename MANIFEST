@@ -1,4 +1,4 @@
-.gitignore
+CHANGES
 doc/graph_format.txt
 inc/Module/Install.pm
 inc/Module/Install/Base.pm
@@ -46,6 +46,7 @@ t/03podcoverage.t
 t/data/Collatex-16.xml
 t/data/cx16.json
 t/data/florilegium.csv
+t/data/florilegium.dot
 t/data/florilegium_graphml.xml
 t/data/florilegium_tei_cte.xml
 t/data/florilegium_tei_ps.xml
@@ -56,6 +57,7 @@ t/graph.t
 t/inline2test.conf
 t/stemma.t
 t/text_tradition.t
+t/text_tradition_analysis.t
 t/text_tradition_collation.t
 t/text_tradition_collation_relationshipstore.t
 t/text_tradition_directory.t

@@ -116,7 +116,22 @@ has 'rank' => (
     is => 'rw',
     isa => 'Int',
     predicate => 'has_rank',
+    clearer => 'clear_rank',
     );
+
+## For prefix/suffix readings
+
+has 'join_prior' => (
+	is => 'ro',
+	isa => 'Bool',
+	default => undef,
+	);
+	
+has 'join_next' => (
+	is => 'ro',
+	isa => 'Bool',
+	default => undef,
+	);
 
 
 around BUILDARGS => sub {
@@ -173,6 +188,17 @@ sub related_readings {
 	return $self->collation->related_readings( $self, @_ );
 }
 
+=head2 witnesses 
+
+Calls Collation's reading_witnesses with $self as the first argument.
+
+=cut
+
+sub witnesses {
+	my $self = shift;
+	return $self->collation->reading_witnesses( $self, @_ );
+}
+
 =head2 predecessors
 
 Returns a list of Reading objects that immediately precede $self in the collation.
@@ -213,6 +239,11 @@ sub set_identical {
 sub _stringify {
 	my $self = shift;
 	return $self->id;
+}
+
+sub TO_JSON {
+	my $self = shift;
+	return $self->text;
 }
 
 no Moose;

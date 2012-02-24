@@ -2,6 +2,7 @@ package Text::Tradition::Collation;
 
 use Encode qw( decode_utf8 );
 use File::Temp;
+use File::Which;
 use Graph;
 use IPC::Run qw( run binary );
 use Text::CSV_XS;
@@ -27,6 +28,7 @@ has 'relations' => (
 	handles => {
 		relationships => 'relationships',
 		related_readings => 'related_readings',
+		get_relationship => 'get_relationship',
 		del_relationship => 'del_relationship',
 	},
 	writer => '_set_relations',
@@ -75,6 +77,12 @@ has 'ac_label' => (
     default => ' (a.c.)',
     );
     
+has 'wordsep' => (
+	is => 'rw',
+	isa => 'Str',
+	default => ' ',
+	);
+    
 has 'start' => (
 	is => 'ro',
 	isa => 'Text::Tradition::Collation::Reading',
@@ -102,6 +110,12 @@ has 'cached_table' => (
 	predicate => 'has_cached_table',
 	clearer => 'wipe_table',
 	);
+	
+has '_graphcalc_done' => (
+	is => 'rw',
+	isa => 'Bool',
+	default => undef,
+	); 
 
 =head1 NAME
 
@@ -155,6 +169,9 @@ representing another layer of path for the given witness - that is, when
 a text has more than one possible reading due to scribal corrections or
 the like.  Defaults to ' (a.c.)'.
 
+=item * wordsep - The string used to separate words in the original text.
+Defaults to ' '.
+
 =back
 
 =head1 ACCESSORS
@@ -168,6 +185,8 @@ the like.  Defaults to ' (a.c.)'.
 =head2 baselabel
 
 =head2 ac_label
+
+=head2 wordsep
 
 Simple accessors for collation attributes.
 
@@ -197,10 +216,14 @@ See L<Text::Tradition::Collation::Reading> for the available arguments.
 Removes the given reading from the collation, implicitly removing its
 paths and relationships.
 
-=head2 merge_readings( $main, $second )
+=head2 merge_readings( $main, $second, $concatenate, $with_str )
 
-Merges the $second reading into the $main one. 
-The arguments may be either readings or reading IDs.
+Merges the $second reading into the $main one. If $concatenate is true, then
+the merged node will carry the text of both readings, concatenated with either
+$with_str (if specified) or a sensible default (the empty string if the
+appropriate 'join_*' flag is set on either reading, or else $self->wordsep.)
+
+The first two arguments may be either readings or reading IDs.
 
 =head2 has_reading( $id )
 
@@ -253,12 +276,6 @@ sub BUILD {
 
 ### Reading construct/destruct functions
 
-sub _clear_cache {
-	my $self = shift;
-	$self->wipe_svg if $self->has_cached_svg;
-	$self->wipe_table if $self->has_cached_table;
-}	
-
 sub add_reading {
 	my( $self, $reading ) = @_;
 	unless( ref( $reading ) eq 'Text::Tradition::Collation::Reading' ) {
@@ -271,7 +288,7 @@ sub add_reading {
 	if( $self->reading( $reading->id ) ) {
 		throw( "Collation already has a reading with id " . $reading->id );
 	}
-	$self->_clear_cache;
+	$self->_graphcalc_done(0);
 	$self->_add_reading( $reading->id => $reading );
 	# Once the reading has been added, put it in both graphs.
 	$self->sequence->add_vertex( $reading->id );
@@ -288,7 +305,8 @@ around del_reading => sub {
 		$arg = $arg->id;
 	}
 	# Remove the reading from the graphs.
-	$self->_clear_cache;
+	$self->_graphcalc_done(0);
+	$self->_clear_cache; # Explicitly clear caches to GC the reading
 	$self->sequence->delete_vertex( $arg );
 	$self->relations->delete_reading( $arg );
 	
@@ -296,15 +314,58 @@ around del_reading => sub {
 	$self->$orig( $arg );
 };
 
-# merge_readings( $main, $to_be_deleted );
+=begin testing
+
+use Text::Tradition;
+
+my $cxfile = 't/data/Collatex-16.xml';
+my $t = Text::Tradition->new( 
+    'name'  => 'inline', 
+    'input' => 'CollateX',
+    'file'  => $cxfile,
+    );
+my $c = $t->collation;
+
+my $rno = scalar $c->readings;
+# Split n21 for testing purposes
+my $new_r = $c->add_reading( { 'id' => 'n21p0', 'text' => 'un', 'join_next' => 1 } );
+my $old_r = $c->reading( 'n21' );
+$old_r->alter_text( 'to' );
+$c->del_path( 'n20', 'n21', 'A' );
+$c->add_path( 'n20', 'n21p0', 'A' );
+$c->add_path( 'n21p0', 'n21', 'A' );
+$c->flatten_ranks();
+ok( $c->reading( 'n21p0' ), "New reading exists" );
+is( scalar $c->readings, $rno, "Reading add offset by flatten_ranks" );
+
+# Combine n3 and n4
+$c->merge_readings( 'n3', 'n4', 1 );
+ok( !$c->reading('n4'), "Reading n4 is gone" );
+is( $c->reading('n3')->text, 'with his', "Reading n3 has both words" );
+
+# Collapse n25 and n26
+$c->merge_readings( 'n25', 'n26' );
+ok( !$c->reading('n26'), "Reading n26 is gone" );
+is( $c->reading('n25')->text, 'rood', "Reading n25 has an unchanged word" );
+
+# Combine n21 and n21p0
+my $remaining = $c->reading('n21');
+$remaining ||= $c->reading('n22');  # one of these should still exist
+$c->merge_readings( 'n21p0', $remaining, 1 );
+ok( !$c->reading('n21'), "Reading $remaining is gone" );
+is( $c->reading('n21p0')->text, 'unto', "Reading n21p0 merged correctly" );
+
+=end testing
+
+=cut
 
 sub merge_readings {
 	my $self = shift;
 
 	# We only need the IDs for adding paths to the graph, not the reading
 	# objects themselves.
-    my( $kept, $deleted, $combine_char ) = $self->_stringify_args( @_ );
-	$self->_clear_cache;
+    my( $kept, $deleted, $combine, $combine_char ) = $self->_stringify_args( @_ );
+	$self->_graphcalc_done(0);
 
     # The kept reading should inherit the paths and the relationships
     # of the deleted reading.
@@ -322,11 +383,15 @@ sub merge_readings {
 	$self->relations->merge_readings( $kept, $deleted, $combine_char );
 	
 	# Do the deletion deed.
-	if( $combine_char ) {
+	if( $combine ) {
 		my $kept_obj = $self->reading( $kept );
-		my $new_text = join( $combine_char, $kept_obj->text, 
-			$self->reading( $deleted )->text );
-		$kept_obj->alter_text( $new_text );
+		my $del_obj = $self->reading( $deleted );
+		my $joinstr = $combine_char;
+		unless( defined $joinstr ) {
+			$joinstr = '' if $kept_obj->join_next || $del_obj->join_prior;
+			$joinstr = $self->wordsep unless defined $joinstr;
+		}
+		$kept_obj->alter_text( join( $joinstr, $kept_obj->text, $del_obj->text ) );
 	}
 	$self->del_reading( $deleted );
 }
@@ -334,12 +399,12 @@ sub merge_readings {
 
 # Helper function for manipulating the graph.
 sub _stringify_args {
-	my( $self, $first, $second, $arg ) = @_;
+	my( $self, $first, $second, @args ) = @_;
     $first = $first->id
         if ref( $first ) eq 'Text::Tradition::Collation::Reading';
     $second = $second->id
         if ref( $second ) eq 'Text::Tradition::Collation::Reading';        
-    return( $first, $second, $arg );
+    return( $first, $second, @args );
 }
 
 # Helper function for manipulating the graph.
@@ -360,7 +425,7 @@ sub add_path {
 	# objects themselves.
     my( $source, $target, $wit ) = $self->_stringify_args( @_ );
 
-	$self->_clear_cache;
+	$self->_graphcalc_done(0);
 	# Connect the readings
     $self->sequence->add_edge( $source, $target );
     # Note the witness in question
@@ -381,7 +446,7 @@ sub del_path {
 	# objects themselves.
     my( $source, $target, $wit ) = $self->_stringify_args( @args );
 
-	$self->_clear_cache;
+	$self->_graphcalc_done(0);
 	if( $self->sequence->has_edge_attribute( $source, $target, $wit ) ) {
 		$self->sequence->delete_edge_attribute( $source, $target, $wit );
 	}
@@ -410,7 +475,7 @@ be called via $tradition->del_witness.
 sub clear_witness {
 	my( $self, @sigils ) = @_;
 
-	$self->_clear_cache;
+	$self->_graphcalc_done(0);
 	# Clear the witness(es) out of the paths
 	foreach my $e ( $self->paths ) {
 		foreach my $sig ( @sigils ) {
@@ -431,11 +496,20 @@ sub add_relationship {
     my( $source, $target, $opts ) = $self->_stringify_args( @_ );
     my( @vectors ) = $self->relations->add_relationship( $source, 
     	$self->reading( $source ), $target, $self->reading( $target ), $opts );
-    # Force a full rank recalculation every time. Yuck.
-    $self->calculate_ranks() if $self->end->has_rank;
-	$self->_clear_cache;
+	$self->_graphcalc_done(0);
     return @vectors;
 }
+
+around qw/ get_relationship del_relationship / => sub {
+	my $orig = shift;
+	my $self = shift;
+	my @args = @_;
+	if( @args == 1 && ref( $args[0] ) eq 'ARRAY' ) {
+		@args = @{$_[0]};
+	}
+	my( $source, $target ) = $self->_stringify_args( @args );
+	$self->$orig( $source, $target );
+};
 
 =head2 reading_witnesses( $reading )
 
@@ -455,6 +529,10 @@ sub reading_witnesses {
 		my $wits = $self->sequence->get_edge_attributes( @$e );
 		@all_witnesses{ keys %$wits } = 1;
 	}
+	my $acstr = $self->ac_label;
+	foreach my $acwit ( grep { $_ =~ s/^(.*)\Q$acstr\E$/$1/ } keys %all_witnesses ) {
+		delete $all_witnesses{$acwit.$acstr} if exists $all_witnesses{$acwit};
+	}
 	return keys %all_witnesses;
 }
 
@@ -463,13 +541,16 @@ sub reading_witnesses {
 =head2 as_svg( \%options )
 
 Returns an SVG string that represents the graph, via as_dot and graphviz.
-See as_dot for a list of options.
+See as_dot for a list of options.  Must have GraphViz (dot) installed to run.
 
 =cut
 
 sub as_svg {
     my( $self, $opts ) = @_;
+    throw( "Need GraphViz installed to output SVG" )
+    	unless File::Which::which( 'dot' );
     my $want_subgraph = exists $opts->{'from'} || exists $opts->{'to'};
+    $self->calculate_ranks() unless $self->_graphcalc_done;
     if( !$self->has_cached_svg || $opts->{'recalc'}	|| $want_subgraph ) {        
 		my @cmd = qw/dot -Tsvg/;
 		my( $svg, $err );
@@ -575,6 +656,8 @@ sub as_dot {
         next if $reading->id eq $reading->text;
         my $rattrs;
         my $label = $reading->text;
+        $label .= '-' if $reading->join_next;
+        $label = "-$label" if $reading->join_prior;
         $label =~ s/\"/\\\"/g;
 		$rattrs->{'label'} = $label;
 		$rattrs->{'fillcolor'} = '#b3f36d' if $reading->is_common && $color_common;
@@ -767,7 +850,8 @@ is( scalar $st->collation->relationships, 3, "Reparsed collation has new relatio
 
 sub as_graphml {
     my( $self ) = @_;
-
+	$self->calculate_ranks unless $self->_graphcalc_done;
+	
     # Some namespaces
     my $graphml_ns = 'http://graphml.graphdrawing.org/xmlns';
     my $xsi_ns = 'http://www.w3.org/2001/XMLSchema-instance';
@@ -789,7 +873,7 @@ sub as_graphml {
     	$graph_data_keys{$datum} = 'dg'.$gdi++;
         my $key = $root->addNewChild( $graphml_ns, 'key' );
         $key->setAttribute( 'attr.name', $datum );
-        $key->setAttribute( 'attr.type', $key eq 'linear' ? 'boolean' : 'string' );
+        $key->setAttribute( 'attr.type', $datum eq 'linear' ? 'boolean' : 'string' );
         $key->setAttribute( 'for', 'graph' );
         $key->setAttribute( 'id', $graph_data_keys{$datum} );    	
     }
@@ -804,6 +888,9 @@ sub as_graphml {
     	is_start => 'boolean',
     	is_end => 'boolean',
     	is_lacuna => 'boolean',
+    	is_common => 'boolean',
+    	join_prior => 'boolean',
+    	join_next => 'boolean',
     	);
     foreach my $datum ( keys %node_data ) {
         $node_data_keys{$datum} = 'dn'.$ndi++;
@@ -823,6 +910,7 @@ sub as_graphml {
     	relationship => 'string',		# ID/label for a relationship
     	extra => 'boolean',				# Path key
     	scope => 'string',				# Relationship key
+    	annotation => 'string',			# Relationship key
     	non_correctable => 'boolean',	# Relationship key
     	non_independent => 'boolean',	# Relationship key
     	);
@@ -960,7 +1048,7 @@ keys have a true hash value will be included.
 
 sub alignment_table {
     my( $self ) = @_;
-    my $include; # see if we can ditch this
+    $self->calculate_ranks() unless $self->_graphcalc_done;
     return $self->cached_table if $self->has_cached_table;
     
     # Make sure we can do this
@@ -971,9 +1059,6 @@ sub alignment_table {
     my $table = { 'alignment' => [], 'length' => $self->end->rank - 1 };
     my @all_pos = ( 1 .. $self->end->rank - 1 );
     foreach my $wit ( sort { $a->sigil cmp $b->sigil } $self->tradition->witnesses ) {
-    	if( $include ) {
-    		next unless $include->{$wit->sigil};
-    	}
         # print STDERR "Making witness row(s) for " . $wit->sigil . "\n";
         my @wit_path = $self->reading_sequence( $self->start, $self->end, $wit->sigil );
         my @row = _make_witness_row( \@wit_path, \@all_pos );
@@ -1187,7 +1272,17 @@ sub path_text {
 	$start = $self->start unless $start;
 	$end = $self->end unless $end;
 	my @path = grep { !$_->is_meta } $self->reading_sequence( $start, $end, $wit );
-	return join( ' ', map { $_->text } @path );
+	my $pathtext = '';
+	my $last;
+	foreach my $r ( @path ) {
+		if( $r->join_prior || !$last || $last->join_next ) {
+			$pathtext .= $r->text;
+		} else {
+			$pathtext .= ' ' . $r->text;
+		}
+		$last = $r;
+	}
+	return $pathtext;
 }
 
 =head1 INITIALIZATION METHODS
@@ -1258,14 +1353,13 @@ my $t = Text::Tradition->new(
 my $c = $t->collation;
 
 # Make an svg
-my $svg = $c->as_svg;
-is( substr( $svg, 0, 5 ), '<?xml', "Got XML doc for svg" );
-ok( $c->has_cached_svg, "SVG was cached" );
-is( $c->as_svg, $svg, "Cached SVG returned upon second call" );
+my $table = $c->alignment_table;
+ok( $c->has_cached_table, "Alignment table was cached" );
+is( $c->alignment_table, $table, "Cached table returned upon second call" );
 $c->calculate_ranks;
-is( $c->as_svg, $svg, "Cached SVG retained with no rank change" );
+is( $c->alignment_table, $table, "Cached table retained with no rank change" );
 $c->add_relationship( 'n9', 'n23', { 'type' => 'spelling' } );
-isnt( $c->as_svg, $svg, "SVG changed after relationship add" );
+isnt( $c->alignment_table, $table, "Alignment table changed after relationship add" );
 
 =end testing
 
@@ -1332,14 +1426,20 @@ sub calculate_ranks {
             throw( "Ranks not calculated after $last - do you have a cycle in the graph?" );
         }
     }
-    # Do we need to invalidate the cached SVG?
-    if( $self->has_cached_svg ) {
+    # Do we need to invalidate the cached data?
+    if( $self->has_cached_svg || $self->has_cached_table ) {
     	foreach my $r ( $self->readings ) {
-    		next if $existing_ranks{$r} == $r->rank;
-    		$self->wipe_svg;
+    		next if defined( $existing_ranks{$r} ) 
+    			&& $existing_ranks{$r} == $r->rank;
+    		# Something has changed, so clear the cache
+    		$self->_clear_cache;
+			# ...and recalculate the common readings.
+			$self->calculate_common_readings();
     		last;
     	}
     }
+	# The graph calculation information is now up to date.
+	$self->_graphcalc_done(1);
 }
 
 sub _assign_rank {
@@ -1377,6 +1477,13 @@ sub _assign_rank {
     return @next_nodes;
 }
 
+sub _clear_cache {
+	my $self = shift;
+	$self->wipe_svg if $self->has_cached_svg;
+	$self->wipe_table if $self->has_cached_table;
+}	
+
+
 =head2 flatten_ranks
 
 A convenience method for parsing collation data.  Searches the graph for readings
@@ -1399,44 +1506,6 @@ sub flatten_ranks {
             $unique_rank_rdg{$key} = $rdg;
         }
     }
-}
-
-=head2 remove_collations
-
-Another convenience method for parsing. Removes all 'collation' relationships
-that were defined in order to get the reading ranks to be correct.
-
-=begin testing
-
-use Text::Tradition;
-
-my $cxfile = 't/data/Collatex-16.xml';
-my $t = Text::Tradition->new( 
-    'name'  => 'inline', 
-    'input' => 'CollateX',
-    'file'  => $cxfile,
-    );
-my $c = $t->collation;
-
-isnt( $c->reading('n23')->rank, $c->reading('n9')->rank, "Rank skew exists" );
-$c->add_relationship( 'n23', 'n9', { 'type' => 'collated', 'scope' => 'local' } );
-is( scalar $c->relationships, 4, "Found all expected relationships" );
-$c->remove_collations;
-is( scalar $c->relationships, 3, "Collated relationships now gone" );
-is( $c->reading('n23')->rank, $c->reading('n9')->rank, "Aligned ranks were preserved" );
-
-=end testing
-
-=cut
-
-sub remove_collations {
-	my $self = shift;
-	foreach my $reledge ( $self->relationships ) {
-		my $relobj = $self->relations->get_relationship( $reledge );
-		if( $relobj && $relobj->type eq 'collated' ) {
-			$self->relations->delete_relationship( $reledge );
-		}
-	}
 }
 	
 
@@ -1472,9 +1541,13 @@ is_deeply( \@marked, \@expected, "Found correct list of common readings" );
 sub calculate_common_readings {
 	my $self = shift;
 	my @common;
+	map { $_->is_common( 0 ) } $self->readings;
+	# Implicitly calls calculate_ranks
 	my $table = $self->alignment_table;
 	foreach my $idx ( 0 .. $table->{'length'} - 1 ) {
-		my @row = map { $_->{'tokens'}->[$idx]->{'t'} } @{$table->{'alignment'}};
+		my @row = map { $_->{'tokens'}->[$idx] 
+							? $_->{'tokens'}->[$idx]->{'t'} : '' } 
+					@{$table->{'alignment'}};
 		my %hash;
 		foreach my $r ( @row ) {
 			if( $r ) {

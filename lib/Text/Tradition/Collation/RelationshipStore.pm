@@ -86,23 +86,8 @@ has 'graph' => (
     	relationships => 'edges',
     	add_reading => 'add_vertex',
     	delete_reading => 'delete_vertex',
-    	delete_relationship => 'delete_edge',
     },
 	);
-	
-around 'delete_relationship' => sub {
-	my $orig = shift;
-	my $self = shift;
-	my @vector;
-	if( @_ == 1 && ref( $_[0] ) eq 'ARRAY' ) {
-		# Dereference the edge arrayref that was passed.
-		my $edge = shift;
-		@vector = @$edge;
-	} else {
-		@vector = @_;
-	}
-	return $self->$orig( @vector );
-};
 	
 =head2 get_relationship
 
@@ -123,7 +108,7 @@ sub get_relationship {
 	my $relationship;
 	if( $self->graph->has_edge_attribute( @vector, 'object' ) ) {
 		$relationship = $self->graph->get_edge_attribute( @vector, 'object' );
-	}
+	} 
 	return $relationship;
 }
 
@@ -133,11 +118,6 @@ sub _set_relationship {
 	$self->graph->set_edge_attribute( @vector, 'object', $relationship );
 }
 
-sub _remove_relationship {
-	my( $self, @vector ) = @_;
-	$self->graph->delete_edge( @vector );
-}
-	
 =head2 create
 
 Create a new relationship with the given options and return it.
@@ -152,7 +132,11 @@ sub create {
 	my $target = delete $options->{'orig_b'};
 	my $rel = $self->get_relationship( $source, $target );
 	if( $rel ) {
-		if( $rel->type ne $options->{'type'} ) {
+		if( $rel->type eq 'collated' ) {
+			# Always replace a 'collated' relationship with a more descriptive
+			# one, if asked.
+			$self->del_relationship( $source, $target );
+		} elsif( $rel->type ne $options->{'type'} ) {
 			throw( "Another relationship of type " . $rel->type 
 				. " already exists between $source and $target" );
 		} else {
@@ -224,25 +208,43 @@ add_relationship.
 sub add_relationship {
 	my( $self, $source, $source_rdg, $target, $target_rdg, $options ) = @_;
 
-	# Check the options
-	$options->{'scope'} = 'local' unless $options->{'scope'};
-	
-	my( $is_valid, $reason ) = 
-		$self->relationship_valid( $source, $target, $options->{'type'} );
-    unless( $is_valid ) {
-        throw( "Invalid relationship: $reason" );
+	my $relationship;
+	my $thispaironly;
+	if( ref( $options ) eq 'Text::Tradition::Collation::Relationship' ) {
+		$relationship = $options;
+		$thispaironly = 1;  # If existing rel, set only where asked.
+	} else {
+		# Check the options
+		$options->{'scope'} = 'local' unless $options->{'scope'};
+		
+		my( $is_valid, $reason ) = 
+			$self->relationship_valid( $source, $target, $options->{'type'} );
+		unless( $is_valid ) {
+			throw( "Invalid relationship: $reason" );
+		}
+		
+		# Try to create the relationship object.
+		$options->{'reading_a'} = $source_rdg->text;
+		$options->{'reading_b'} = $target_rdg->text;
+		$options->{'orig_a'} = $source;
+		$options->{'orig_b'} = $target;
+    	if( $options->{'scope'} ne 'local' ) {
+			# Is there a relationship with this a & b already?
+			my $otherrel = $self->scoped_relationship( $options->{reading_a}, 
+				$options->{reading_b} );
+			if( $otherrel && $otherrel->type eq $options->{type}
+				&& $otherrel->scope eq $options->{scope} ) {
+				warn "Applying existing scoped relationship";
+				$relationship = $otherrel;
+			}
+    	}
+		$relationship = $self->create( $options ) unless $relationship;  # Will throw on error
     }
-    
-    # Try to create the relationship object.
-    $options->{'reading_a'} = $source_rdg->text;
-    $options->{'reading_b'} = $target_rdg->text;
-    $options->{'orig_a'} = $source;
-    $options->{'orig_b'} = $target;
-    my $relationship = $self->create( $options );  # Will throw on error
+
 
 	# Find all the pairs for which we need to set the relationship.
 	my @vectors = ( [ $source, $target ] );	
-    if( $relationship->colocated && $relationship->nonlocal ) {
+    if( $relationship->colocated && $relationship->nonlocal && !$thispaironly ) {
     	my $c = $self->collation;
     	# Set the same relationship everywhere we can, throughout the graph.
     	my @identical_readings = grep { $_->text eq $relationship->reading_a }
@@ -267,8 +269,9 @@ sub add_relationship {
     my @pairs_set;
     foreach my $v ( @vectors ) {
 		my $rel = $self->get_relationship( @$v );
-    	if( $rel ) {
+    	if( $rel && $rel ne $relationship ) {
     		if( $rel->nonlocal ) {
+    			$DB::single = 1;
     			throw( "Found conflicting relationship at @$v" );
     		} else {
     			warn "Not overriding local relationship set at @$v";
@@ -307,6 +310,11 @@ sub del_relationship {
 	return @vectors;
 }
 
+sub _remove_relationship {
+	my( $self, @vector ) = @_;
+	$self->graph->delete_edge( @vector );
+}
+	
 =head2 relationship_valid( $source, $target, $type )
 
 Checks whether a relationship of type $type may exist between the readings given
@@ -369,23 +377,27 @@ sub relationship_valid {
 	}
 }
 
-=head2 related_readings( $reading, $colocated_only )
+=head2 related_readings( $reading, $filter )
 
 Returns a list of readings that are connected via relationship links to $reading.
-If $colocated_only is true, restricts the list to those readings that are in the
-same logical location (and therefore have the same rank in the collation graph.)
+If $filter is set to a subroutine ref, returns only those related readings where
+$filter( $relationship ) returns a true value.
 
 =cut
 
 sub related_readings {
-	my( $self, $reading, $colocated ) = @_;
+	my( $self, $reading, $filter ) = @_;
 	my $return_object;
 	if( ref( $reading ) eq 'Text::Tradition::Collation::Reading' ) {
 		$reading = $reading->id;
 		$return_object = 1;
 	}
 	my @answer;
-	if( $colocated ) {
+	if( $filter ) {
+		# Backwards compat
+		if( $filter eq 'colocated' ) {
+			$filter = sub { $_[0]->colocated };
+		}
 		my %found = ( $reading => 1 );
 		my $check = [ $reading ];
 		my $iter = 0;
@@ -393,7 +405,7 @@ sub related_readings {
 			my $more = [];
 			foreach my $r ( @$check ) {
 				foreach my $nr ( $self->graph->neighbors( $r ) ) {
-					if( $self->get_relationship( $r, $nr )->colocated ) {
+					if( &$filter( $self->get_relationship( $r, $nr ) ) ) {
 						push( @$more, $nr ) unless exists $found{$nr};
 						$found{$nr} = 1;
 					}
@@ -401,6 +413,7 @@ sub related_readings {
 			}
 			$check = $more;
 		}
+		delete $found{$reading};
 		@answer = keys %found;
 	} else {
 		@answer = $self->graph->all_reachable( $reading );
@@ -477,6 +490,7 @@ sub _as_graphml {
 		my $rel_obj = $self->get_relationship( @$e );
 		_add_graphml_data( $edge_el, $edge_keys->{'relationship'}, $rel_obj->type );
 		_add_graphml_data( $edge_el, $edge_keys->{'scope'}, $rel_obj->scope );
+		_add_graphml_data( $edge_el, $edge_keys->{'annotation'}, $rel_obj->annotation );
 		_add_graphml_data( $edge_el, $edge_keys->{'non_correctable'}, 
 			$rel_obj->non_correctable ) if $rel_obj->noncorr_set;
 		_add_graphml_data( $edge_el, $edge_keys->{'non_independent'}, 
