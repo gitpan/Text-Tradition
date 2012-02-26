@@ -13,15 +13,15 @@
 
 #     ABSTRACT => q[a software model for a set of collated texts]
 #     AUTHOR => [q[Tara L Andrews <aurum@cpan.org>]]
-#     BUILD_REQUIRES => { Test::Warn=>q[0], ExtUtils::MakeMaker=>q[6.42] }
+#     BUILD_REQUIRES => { Test::Warn=>q[0], ExtUtils::MakeMaker=>q[6.62] }
 #     CONFIGURE_REQUIRES => {  }
 #     DISTNAME => q[Text-Tradition]
 #     LICENSE => q[perl]
 #     MIN_PERL_VERSION => q[5.012]
 #     NAME => q[Text::Tradition]
 #     NO_META => q[1]
-#     PREREQ_PM => { IPC::Run=>q[0], KiokuDB::GC::Naive=>q[0], Bio::Phylo::IO=>q[0], File::Which=>q[0], Graph=>q[0], File::chdir=>q[0], Moose::Util::TypeConstraints=>q[0], XML::LibXML::XPathContext=>q[0], Module::Load=>q[0], StackTrace::Auto=>q[0], Text::CSV_XS=>q[0], Text::CSV::Simple=>q[0], Algorithm::Diff=>q[0], DBI=>q[0], Moose=>q[0], KiokuX::Model=>q[0], ExtUtils::MakeMaker=>q[6.42], KiokuDB::Backend::DBI=>q[0], Test::Warn=>q[0], TryCatch=>q[0], Graph::Reader::Dot=>q[0], Throwable::X=>q[0], XML::LibXML=>q[0], JSON=>q[0], KiokuDB::TypeMap::Entry::Naive=>q[0], KiokuDB::TypeMap=>q[0] }
-#     VERSION => q[0.2]
+#     PREREQ_PM => { IPC::Run=>q[0], KiokuDB::GC::Naive=>q[0], Bio::Phylo::IO=>q[0], File::Which=>q[0], Graph=>q[0], File::chdir=>q[0], Moose::Util::TypeConstraints=>q[0], XML::LibXML::XPathContext=>q[0], Module::Load=>q[0], StackTrace::Auto=>q[0], Text::CSV_XS=>q[0], Text::CSV::Simple=>q[0], Algorithm::Diff=>q[0], DBI=>q[0], Moose=>q[0], KiokuX::Model=>q[0], ExtUtils::MakeMaker=>q[6.62], KiokuDB::Backend::DBI=>q[0], Test::Warn=>q[0], TryCatch=>q[0], Graph::Reader::Dot=>q[0], Throwable::X=>q[0], XML::LibXML=>q[0], JSON=>q[0], KiokuDB::TypeMap::Entry::Naive=>q[0], KiokuDB::TypeMap=>q[0] }
+#     VERSION => q[0.3]
 #     VERSION_FROM => q[lib/Text/Tradition.pm]
 #     dist => { PREOP=>q[$(PERL) -I. "-MModule::Install::Admin" -e "dist_preop(q($(DISTVNAME)))"] }
 #     realclean => { FILES=>q[MYMETA.yml] }
@@ -34,21 +34,21 @@
 # These definitions are from config.sh (via /opt/local/lib/perl5/5.12.3/darwin-multi-2level/Config.pm).
 # They may have been overridden via Makefile.PL or on the command line.
 AR = ar
-CC = /usr/bin/gcc-4.2
+CC = /Developer/usr/bin/clang
 CCCDLFLAGS =  
 CCDLFLAGS =  
 DLEXT = bundle
 DLSRC = dl_dlopen.xs
 EXE_EXT = 
 FULL_AR = /usr/bin/ar
-LD = env MACOSX_DEPLOYMENT_TARGET=10.6 /usr/bin/gcc-4.2
+LD = env MACOSX_DEPLOYMENT_TARGET=10.3 /Developer/usr/bin/clang
 LDDLFLAGS = -L/opt/local/lib -arch x86_64 -bundle -undefined dynamic_lookup -fstack-protector
 LDFLAGS = -L/opt/local/lib -arch x86_64 -fstack-protector
-LIBC = /usr/lib/libc.dylib
+LIBC = 
 LIB_EXT = .a
 OBJ_EXT = .o
 OSNAME = darwin
-OSVERS = 10.6.0
+OSVERS = 11.2.0
 RANLIB = ranlib
 SITELIBEXP = /opt/local/lib/perl5/site_perl/5.12.3
 SITEARCHEXP = /opt/local/lib/perl5/site_perl/5.12.3/darwin-multi-2level
@@ -63,11 +63,11 @@ DIRFILESEP = /
 DFSEP = $(DIRFILESEP)
 NAME = Text::Tradition
 NAME_SYM = Text_Tradition
-VERSION = 0.2
+VERSION = 0.3
 VERSION_MACRO = VERSION
-VERSION_SYM = 0_2
+VERSION_SYM = 0_3
 DEFINE_VERSION = -D$(VERSION_MACRO)=\"$(VERSION)\"
-XS_VERSION = 0.2
+XS_VERSION = 0.3
 XS_VERSION_MACRO = XS_VERSION
 XS_DEFINE_VERSION = -D$(XS_VERSION_MACRO)=\"$(XS_VERSION)\"
 INST_ARCHLIB = blib/arch
@@ -345,7 +345,7 @@ RCS_LABEL = rcs -Nv$(VERSION_SYM): -q
 DIST_CP = best
 DIST_DEFAULT = tardist
 DISTNAME = Text-Tradition
-DISTVNAME = Text-Tradition-0.2
+DISTVNAME = Text-Tradition-0.3
 
 
 # --- MakeMaker macro section:
@@ -900,7 +900,7 @@ testdb_static :: testdb_dynamic
 # --- MakeMaker ppd section:
 # Creates a PPD (Perl Package Description) for a binary distribution.
 ppd :
-	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="0.2">' > $(DISTNAME).ppd
+	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="0.3">' > $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <ABSTRACT>a software model for a set of collated texts</ABSTRACT>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <AUTHOR>Tara L Andrews &lt;aurum@cpan.org&gt;</AUTHOR>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <IMPLEMENTATION>' >> $(DISTNAME).ppd
@@ -971,7 +971,7 @@ pm_to_blib : $(FIRST_MAKEFILE) $(TO_INST_PM)
 
 
 # End.
-# Postamble by Module::Install 1.00
+# Postamble by Module::Install 1.04
 # --- Module::Install::Admin::Makefile section:
 
 realclean purge ::
