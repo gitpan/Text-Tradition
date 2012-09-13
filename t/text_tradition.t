@@ -33,7 +33,7 @@ if( $wit_a ) {
 is( $s->witness('X'), undef, "There is no witness X" );
 ok( !exists $s->{'witnesses'}->{'X'}, "Witness key X not created" );
 
-my $wit_d = $s->add_witness( 'sigil' => 'D' );
+my $wit_d = $s->add_witness( 'sigil' => 'D', 'sourcetype' => 'collation' );
 is( ref( $wit_d ), 'Text::Tradition::Witness', "new witness created" );
 is( $wit_d->sigil, 'D', "witness has correct sigil" );
 is( scalar $s->witnesses, 4, "object now has four witnesses" );
@@ -43,26 +43,6 @@ is( $del, $wit_d, "Deleted correct witness" );
 is( scalar $s->witnesses, 3, "object has three witnesses again" );
 
 # TODO test initialization by witness list when we have it
-}
-
-
-
-# =begin testing
-{
-use Text::Tradition;
-
-my $t = Text::Tradition->new( 
-    'name'  => 'simple test', 
-    'input' => 'Tabular',
-    'file'  => 't/data/simple.txt',
-    );
-
-is( $t->stemma_count, 0, "No stemmas added yet" );
-my $s;
-ok( $s = $t->add_stemma( dotfile => 't/data/simple.dot' ), "Added a simple stemma" );
-is( ref( $s ), 'Text::Tradition::Stemma', "Got a stemma object returned" );
-is( $t->stemma_count, 1, "Tradition claims to have a stemma" );
-is( $t->stemma(0), $s, "Tradition hands back the right stemma" );
 }
 
 

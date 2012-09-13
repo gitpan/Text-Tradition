@@ -4,18 +4,20 @@ use lib 'lib';
 use strict;
 use warnings;
 use Getopt::Long;
+use TryCatch;
 use Text::Tradition;
 use Text::Tradition::Directory;
-use Text::Tradition::StemmaUtil;
+use Text::Tradition::StemmaUtil qw/ character_input phylip_pars /;
 
 binmode STDERR, ":utf8";
 binmode STDOUT, ":utf8";
 eval { no warnings; binmode $DB::OUT, ":utf8"; };
 
-my( $informat, $inbase, $outformat, $help, $language, $name, $HACK, $sep, $stemmafile, 
-	$dsn, $dbuser, $dbpass ) 
-    = ( '', '', '', '', 1, 'Tradition', 0, "\t", '',
-    	"dbi:SQLite:dbname=stemmaweb/db/traditions.db", undef, undef );
+# Variables with defaults
+my( $informat, $outformat, $language, $name, $sep, $dsn )  = ( '', '', 'Default', 
+	'Tradition', "\t", "dbi:SQLite:dbname=stemmaweb/db/traditions.db" );
+# Variables with no default
+my( $inbase, $help, $stemmafile,  $dbuser, $dbpass, $from, $to, $dbid, $debug, $nonlinear );
 
 GetOptions( 'i|in=s'    => \$informat,
             'b|base=s'  => \$inbase,
@@ -26,16 +28,20 @@ GetOptions( 'i|in=s'    => \$informat,
             's|stemma=s' => \$stemmafile,
             'u|user=s'  => \$dbuser,
             'p|pass=s'  => \$dbpass,
+            'f|from=s'  => \$from,
+            't|to=s'    => \$to,
+            'nl|nonlinear' => \$nonlinear,
             'sep=s'		=> \$sep,
-            'hack'      => \$HACK,
             'dsn=s'		=> \$dsn,
+	    'dbid=s'    => \$dbid,
+	    	'debug'     => \$debug
     );
 
 if( $help ) {
     help();
 }
 
-unless( $informat =~ /^(CSV|CTE|KUL|Self|TEI|CollateX|tab(ular)?)|stone$/i ) {
+unless( $informat =~ /^(CSV|CTE|KUL|Self|TEI|CollateX|tab(ular)?)|stone|db$/i ) {
     help( "Input format must be one of CollateX, CSV, CTE, Self, TEI" );
 }
 $informat = 'CollateX' if $informat =~ /^c(ollate)?x$/i;
@@ -50,6 +56,11 @@ unless( $outformat =~ /^(graphml|svg|dot|stemma|csv|db)$/ ) {
     help( "Output format must be one of db, graphml, svg, csv, stemma, or dot" );
 }
 
+if( $from || $to ) {
+	help( "Subgraphs only supported in GraphML, dot, or SVG format" ) 
+		unless $outformat =~ /^(graphml|dot|svg)$/;
+}
+
 # Do we have a base if we need it?
 if( $informat =~ /^(KUL|CollateText)$/ && !$inbase ) {
     help( "$informat input needs a base text" );
@@ -57,56 +68,67 @@ if( $informat =~ /^(KUL|CollateText)$/ && !$inbase ) {
 $sep = "\t" if $sep eq 'tab';
 
 my $input = $ARGV[0];
-
-# First: read the base. Make a graph, but also note which
-# nodes represent line beginnings.
-my %args = ( 'input' => $informat,
-             'file' => $input );
-$args{'base'} = $inbase if $inbase;
-$args{'language'} = $language if $language;
-$args{'name'} = $name if $name;
-$args{'sep_char'} = $sep if $informat eq 'Tabular';
-### Custom hacking for Stone
-if( $informat eq 'CollateText' ) {
-    $args{'sigla'} = [ qw/ S M X V Z Bb B K W L / ];
+my $tradition;
+my $dir;
+if( $informat eq 'db' ) {
+	my $dbargs = { dsn => $dsn };
+	$dbargs->{'extra_args'}->{'user'} = $dbuser if $dbuser;
+	$dbargs->{'extra_args'}->{'password'} = $dbpass if $dbpass;
+	$dir = Text::Tradition::Directory->new( $dbargs );
+	my $scope = $dir->new_scope();
+	$tradition = $dir->lookup( $input );
+} else {
+	# First: read the base. Make a graph, but also note which
+	# nodes represent line beginnings.
+	my %args = ( 'input' => $informat,
+				 'file' => $input );
+	$args{'linear'} = 0 if $nonlinear;
+	$args{'base'} = $inbase if $inbase;
+	$args{'language'} = $language if $language;
+	$args{'name'} = $name if $name;
+	$args{'sep_char'} = $sep if $informat eq 'Tabular';
+	### Custom hacking for Stone
+	if( $informat eq 'CollateText' ) {
+		$args{'sigla'} = [ qw/ S M X V Z Bb B K W L / ];
+	}
+	$tradition = Text::Tradition->new( %args );
 }
-my $tradition = Text::Tradition->new( %args );
 if( $stemmafile ) {
 	my $stemma = $tradition->add_stemma( dotfile => $stemmafile );
 	print STDERR "Saved stemma at $stemmafile\n" if $stemma;
 }
 
-### Custom hacking
-# Remove witnesses C, E, G in the Matthew text
-if( $HACK ) {
-	# Set the funny name while we're at it
-	my $oldname = $tradition->name;
-	$oldname =~ s/(\d)/ $1/;
-	my $newname = "\x{17d}amanakagrut\x{2bf}iwn " . ucfirst( $oldname );
-	$tradition->name( $newname );
-}
-
 # Now output what we have been asked to.
 if( $outformat eq 'stemma' ) {
-    my $cdata = character_input( $tradition->collation->make_alignment_table );
-    my( $result, $tree ) = phylip_pars( $cdata );
-    if( $result ) {
-        print $tree;
-    } else {
-        print STDERR "Bad result: $tree";
+    my $cdata = character_input( $tradition->collation->alignment_table );
+    try {
+    	print phylip_pars( $cdata );
+    } catch( Text::Tradition::Error $e ) {
+        print STDERR "Bad result: " . $e->message;
     }
 } elsif( $outformat eq 'db' ) {
-	my $extra_args = { 'create' => 1 };
-	$extra_args->{'user'} = $dbuser if $dbuser;
-	$extra_args->{'password'} = $dbpass if $dbpass;
-	my $dir = Text::Tradition::Directory->new( 'dsn' => $dsn, 
-		'extra_args' => $extra_args );
+	unless( $dir ) {
+		my $extra_args = { 'create' => 1 };
+		$extra_args->{'user'} = $dbuser if $dbuser;
+		$extra_args->{'password'} = $dbpass if $dbpass;
+		$dir = Text::Tradition::Directory->new( 'dsn' => $dsn, 
+			'extra_args' => $extra_args );
+	}
 	my $scope = $dir->new_scope;
-	my $uuid = $dir->store( $tradition );
+	my $uuid;
+	if( $dbid ) {
+		$uuid = $dir->store( $dbid => $tradition );
+	} else {
+		$uuid = $dir->store( $tradition );
+	}
 	print STDERR "Saved tradition to database with ID $uuid\n";
 } else {
     my $output = "as_$outformat";
-    print $tradition->collation->$output();
+    my $opts = {};
+    $opts->{'from'} = $from if $from;
+    $opts->{'to'} = $to if $to;
+    $opts->{'nocalc'} = 1 if $debug;
+    print $tradition->collation->$output( $opts );
 }
 
 sub help {

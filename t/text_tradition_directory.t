@@ -10,6 +10,7 @@ $| = 1;
 {
 use TryCatch;
 use File::Temp;
+use Safe::Isa;
 use Text::Tradition;
 use_ok 'Text::Tradition::Directory';
 
@@ -23,26 +24,31 @@ my $t = Text::Tradition->new(
 	'input' => 'Tabular',
 	'file'  => 't/data/simple.txt',
 	);
+my $stemma_enabled;
+eval { $stemma_enabled = $t->enable_stemmata; };
 
 {
 	my $d = Text::Tradition::Directory->new( 'dsn' => $dsn,
 		'extra_args' => { 'create' => 1 } );
-	is( ref $d, 'Text::Tradition::Directory', "Got directory object" );
+	ok( $d->$_isa('Text::Tradition::Directory'), "Got directory object" );
 	
 	my $scope = $d->new_scope;
 	$uuid = $d->save( $t );
 	ok( $uuid, "Saved test tradition" );
 	
-	my $s = $t->add_stemma( dotfile => 't/data/simple.dot' );
-	ok( $d->save( $t ), "Updated tradition with stemma" );
-	is( $d->tradition( $uuid ), $t, "Correct tradition returned for id" );
-	is( $d->tradition( $uuid )->stemma(0), $s, "...and it has the correct stemma" );
-	try {
-		$d->save( $s );
-	} catch( Text::Tradition::Error $e ) {
-		is( $e->ident, 'database error', "Got exception trying to save stemma directly" );
-		like( $e->message, qr/Cannot directly save non-Tradition object/, 
-			"Exception has correct message" );
+	SKIP: {
+		skip "Analysis package not installed", 5 unless $stemma_enabled;
+		my $s = $t->add_stemma( dotfile => 't/data/simple.dot' );
+		ok( $d->save( $t ), "Updated tradition with stemma" );
+		is( $d->tradition( $uuid ), $t, "Correct tradition returned for id" );
+		is( $d->tradition( $uuid )->stemma(0), $s, "...and it has the correct stemma" );
+		try {
+			$d->save( $s );
+		} catch( Text::Tradition::Error $e ) {
+			is( $e->ident, 'database error', "Got exception trying to save stemma directly" );
+			like( $e->message, qr/Cannot directly save non-Tradition object/, 
+				"Exception has correct message" );
+		}
 	}
 }
 my $nt = Text::Tradition->new(
@@ -50,7 +56,7 @@ my $nt = Text::Tradition->new(
 	'input' => 'CollateX',
 	'file' => 't/data/Collatex-16.xml',
 	);
-is( ref( $nt ), 'Text::Tradition', "Made new tradition" );
+ok( $nt->$_isa('Text::Tradition'), "Made new tradition" );
 
 {
 	my $f = Text::Tradition::Directory->new( 'dsn' => $dsn );
@@ -64,23 +70,28 @@ is( ref( $nt ), 'Text::Tradition', "Made new tradition" );
 	my( $tlobj ) = grep { $_->{'id'} eq $uuid } @tlist;
 	is( $tlobj->{'name'}, $tf->name, "Directory index has correct tradition name" );
 	is( $tf->name, $t->name, "Retrieved the tradition from a new directory" );
-	my $sid = $f->object_to_id( $tf->stemma(0) );
-	try {
-		$f->tradition( $sid );
-	} catch( Text::Tradition::Error $e ) {
-		is( $e->ident, 'database error', "Got exception trying to fetch stemma directly" );
-		like( $e->message, qr/not a Text::Tradition/, "Exception has correct message" );
+	my $sid;
+	SKIP: {
+		skip "Analysis package not installed", 4 unless $stemma_enabled;
+		$sid = $f->object_to_id( $tf->stemma(0) );
+		try {
+			$f->tradition( $sid );
+		} catch( Text::Tradition::Error $e ) {
+			is( $e->ident, 'database error', "Got exception trying to fetch stemma directly" );
+			like( $e->message, qr/not a Text::Tradition/, "Exception has correct message" );
+		}
+		try {
+			$f->delete( $sid );
+		} catch( Text::Tradition::Error $e ) {
+			is( $e->ident, 'database error', "Got exception trying to delete stemma directly" );
+			like( $e->message, qr/Cannot directly delete non-Tradition object/, 
+				"Exception has correct message" );
+		}
 	}
-	try {
-		$f->delete( $sid );
-	} catch( Text::Tradition::Error $e ) {
-		is( $e->ident, 'database error', "Got exception trying to delete stemma directly" );
-		like( $e->message, qr/Cannot directly delete non-Tradition object/, 
-			"Exception has correct message" );
-	}
+	
 	$f->delete( $uuid );
 	ok( !$f->exists( $uuid ), "Object is deleted from DB" );
-	ok( !$f->exists( $sid ), "Object stemma also deleted from DB" );
+	ok( !$f->exists( $sid ), "Object stemma also deleted from DB" ) if $stemma_enabled;
 	is( scalar $f->traditionlist, 1, "Object is deleted from index" );
 }
 
@@ -88,6 +99,10 @@ is( ref( $nt ), 'Text::Tradition', "Made new tradition" );
 	my $g = Text::Tradition::Directory->new( 'dsn' => $dsn );
 	my $scope = $g->new_scope;
 	is( scalar $g->traditionlist, 1, "Now one object in new directory index" );
+	my $ntobj = $g->tradition( 'CX' );
+	my @w1 = sort { $a->sigil cmp $b->sigil } $ntobj->witnesses;
+	my @w2 = sort{ $a->sigil cmp $b->sigil } $nt->witnesses;
+	is_deeply( \@w1, \@w2, "Looked up remaining tradition by name" );
 }
 }
 
