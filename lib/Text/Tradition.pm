@@ -7,11 +7,19 @@ use Moose::Util qw/ does_role apply_all_roles /;
 use Text::Tradition::Collation;
 use Text::Tradition::Error;
 use Text::Tradition::Witness;
-use Text::Tradition::User;
 use TryCatch;
 
 use vars qw( $VERSION );
-$VERSION = "1.0";
+$VERSION = "1.1";
+
+# Enable plugin(s) if available
+eval { with 'Text::Tradition::HasStemma'; };
+# Don't warn normally
+# if( $@ ) {
+# 	warn "Text::Tradition::Analysis not found. Disabling stemma analysis functionality";
+# };
+eval { with 'Text::Tradition::Language'; };
+eval { with 'Text::Tradition::Ownership'; };
 
 has 'collation' => (
     is => 'ro',
@@ -38,34 +46,12 @@ has 'name' => (
     default => 'Tradition',
     );
     
-has 'language' => (
-	is => 'rw',
-	isa => 'Str',
-	predicate => 'has_language',
-	);
-    
 has '_initialized' => (
 	is => 'ro',
 	isa => 'Bool',
 	default => undef,
 	writer => '_init_done',
 	); 
-
-has 'user' => (
-    is => 'rw',
-    isa => 'Text::Tradition::User',
-    required => 0,
-    predicate => 'has_user',
-    clearer => 'clear_user',
-    weak_ref => 1
-    );
-
-has 'public' => (
-    is => 'rw',
-    isa => 'Bool',
-    required => 0,
-    default => sub { 0; },
-    );
 
 # Create the witness before trying to add it
 around 'add_witness' => sub {
@@ -74,8 +60,6 @@ around 'add_witness' => sub {
     # TODO allow add of a Witness object?
     my %args = @_ == 1 ? %{$_[0]} : @_;
     $args{'tradition'} = $self;
-    $args{'language'} = $self->language 
-    	if( $self->language && !exists $args{'language'} );
     my $new_wit = Text::Tradition::Witness->new( %args );
     $self->$orig( $new_wit->sigil => $new_wit );
     return $new_wit;
@@ -318,71 +302,6 @@ sub add_json_witnesses {
 		$opts->{'object'} = $witspec;
 		$self->add_witness( $opts );
 	}
-}
-
-=head1 PLUGIN HOOKS
-
-=head2 enable_stemmata
-
-If the tradition in question does not have the HasStemma role, make it so. Throws
-an error if the role (ergo, if the Analysis package) is not installed.
-
-=cut
-
-sub enable_stemmata {
-	my $self = shift;
-	my $rolename = 'Text::Tradition::HasStemma';
-	return 1 if does_role( $self, $rolename );
-	try {
-		apply_all_roles( $self, $rolename );
-	} catch {
-		throw( "Cannot apply role to enable stemmata; is the Analysis extension installed?" );
-	}
-	return 1;
-}
-
-=head2 enable_morphology
-
-If the tradition in question has readings that do not include the Morphology
-role, apply the role to them. Throws an error if the role (ergo, if the 
-Morphology package) is not installed.
-
-=cut
-
-sub enable_morphology {
-	my $self = shift;
-	my $rolename = 'Text::Tradition::Morphology';
-	try {
-		load( $rolename );
-	} catch {
-		throw( "Cannot apply role to enable morphology; is the extension installed?" );
-	}
-	foreach my $r ( $self->collation->readings ) {
-		apply_all_roles( $r, $rolename )
-			unless does_role( $r, $rolename );
-	}
-	return 1;
-}
-
-=head2 lemmatize
-
-Calls the appropriate lemmatization function for the language of the
-tradition. Implicitly applies the Morphology role where appropriate (and
-throws an error if the package is not installed.)
-
-=cut
-
-# TODO find a better way to hook this
-sub lemmatize {
-	my $self = shift;
-	unless( $self->has_language ) {
-		warn "Please set a language to lemmatize a tradition";
-		return;
-	}
-	$self->enable_morphology;
-	my $mod = "Text::Tradition::Language::" . $self->language;
-	load( $mod );
-	$mod->can( 'lemmatize' )->( $self );
 }
 
 sub throw {

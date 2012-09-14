@@ -13,15 +13,15 @@
 
 #     ABSTRACT => q[a software model for a set of collated texts]
 #     AUTHOR => [q[Tara L Andrews <aurum@cpan.org>]]
-#     BUILD_REQUIRES => { Test::Warn=>q[0], Data::Dump=>q[0], ExtUtils::MakeMaker=>q[6.62], Test::Memory::Cycle=>q[0] }
+#     BUILD_REQUIRES => { Test::Warn=>q[0], Data::Dump=>q[0], ExtUtils::MakeMaker=>q[6.62] }
 #     CONFIGURE_REQUIRES => {  }
 #     DISTNAME => q[Text-Tradition]
 #     LICENSE => q[perl]
 #     MIN_PERL_VERSION => q[5.012]
 #     NAME => q[Text::Tradition]
 #     NO_META => q[1]
-#     PREREQ_PM => { IPC::Run=>q[0], Text::CSV=>q[0], YAML::XS=>q[0], XML::LibXML::XPathContext=>q[0], Module::Load=>q[0], StackTrace::Auto=>q[0], Data::Dump=>q[0], KiokuX::User::Util=>q[0], DBI=>q[0], ExtUtils::MakeMaker=>q[6.62], KiokuDB::Backend::DBI=>q[0], Moose::Util=>q[0], Spreadsheet::XLSX=>q[0], XML::LibXML=>q[0], KiokuDB::TypeMap=>q[0], Spreadsheet::ParseExcel=>q[0], Text::TEI::Markup=>q[1.7], KiokuDB::GC::Naive=>q[0], Safe::Isa=>q[0], Graph=>q[0], File::Which=>q[0], Test::Memory::Cycle=>q[0], Moose::Util::TypeConstraints=>q[0], Algorithm::Diff=>q[0], XML::Easy::Syntax=>q[0], Moose=>q[0], KiokuX::Model=>q[0], Class::Load=>q[0], namespace::clean=>q[0], TryCatch=>q[0], Test::Warn=>q[0], Throwable::X=>q[0], JSON=>q[0], KiokuDB::TypeMap::Entry::Naive=>q[0] }
-#     VERSION => q[1.0]
+#     PREREQ_PM => { Spreadsheet::ParseExcel=>q[0], Text::TEI::Markup=>q[1.7], IPC::Run=>q[0], File::Which=>q[0], Graph=>q[0], Safe::Isa=>q[0], Text::CSV=>q[0], Moose::Util::TypeConstraints=>q[0], XML::LibXML::XPathContext=>q[0], Module::Load=>q[0], StackTrace::Auto=>q[0], Data::Dump=>q[0], Algorithm::Diff=>q[0], Moose=>q[0], XML::Easy::Syntax=>q[0], ExtUtils::MakeMaker=>q[6.62], Moose::Util=>q[0], Spreadsheet::XLSX=>q[0], Test::Warn=>q[0], TryCatch=>q[0], Throwable::X=>q[0], XML::LibXML=>q[0], JSON=>q[0] }
+#     VERSION => q[1.1]
 #     VERSION_FROM => q[lib/Text/Tradition.pm]
 #     dist => { PREOP=>q[$(PERL) -I. "-MModule::Install::Admin" -e "dist_preop(q($(DISTVNAME)))"] }
 #     realclean => { FILES=>q[MYMETA.yml] }
@@ -63,11 +63,11 @@ DIRFILESEP = /
 DFSEP = $(DIRFILESEP)
 NAME = Text::Tradition
 NAME_SYM = Text_Tradition
-VERSION = 1.0
+VERSION = 1.1
 VERSION_MACRO = VERSION
-VERSION_SYM = 1_0
+VERSION_SYM = 1_1
 DEFINE_VERSION = -D$(VERSION_MACRO)=\"$(VERSION)\"
-XS_VERSION = 1.0
+XS_VERSION = 1.1
 XS_VERSION_MACRO = XS_VERSION
 XS_DEFINE_VERSION = -D$(XS_VERSION_MACRO)=\"$(XS_VERSION)\"
 INST_ARCHLIB = blib/arch
@@ -172,7 +172,6 @@ MAN3PODS = lib/Text/Tradition.pm \
 	lib/Text/Tradition/Collation/Reading.pm \
 	lib/Text/Tradition/Collation/Relationship.pm \
 	lib/Text/Tradition/Collation/RelationshipStore.pm \
-	lib/Text/Tradition/Directory.pm \
 	lib/Text/Tradition/Error.pm \
 	lib/Text/Tradition/Parser/BaseText.pm \
 	lib/Text/Tradition/Parser/CTE.pm \
@@ -185,7 +184,6 @@ MAN3PODS = lib/Text/Tradition.pm \
 	lib/Text/Tradition/Parser/TEI.pm \
 	lib/Text/Tradition/Parser/Tabular.pm \
 	lib/Text/Tradition/Parser/Util.pm \
-	lib/Text/Tradition/User.pm \
 	lib/Text/Tradition/Witness.pm
 
 # Where is the Config information that we are using/depend on
@@ -214,7 +212,6 @@ TO_INST_PM = lib/Text/Tradition.pm \
 	lib/Text/Tradition/Collation/Reading.pm \
 	lib/Text/Tradition/Collation/Relationship.pm \
 	lib/Text/Tradition/Collation/RelationshipStore.pm \
-	lib/Text/Tradition/Directory.pm \
 	lib/Text/Tradition/Error.pm \
 	lib/Text/Tradition/Parser/BaseText.pm \
 	lib/Text/Tradition/Parser/CTE.pm \
@@ -227,10 +224,10 @@ TO_INST_PM = lib/Text/Tradition.pm \
 	lib/Text/Tradition/Parser/TEI.pm \
 	lib/Text/Tradition/Parser/Tabular.pm \
 	lib/Text/Tradition/Parser/Util.pm \
-	lib/Text/Tradition/Store.pm \
-	lib/Text/Tradition/TypeMap/Entry.pm \
-	lib/Text/Tradition/User.pm \
-	lib/Text/Tradition/Witness.pm
+	lib/Text/Tradition/Witness.pm \
+	merge.pl \
+	munge.pl \
+	saverels.pl
 
 PM_TO_BLIB = lib/Text/Tradition/Error.pm \
 	blib/lib/Text/Tradition/Error.pm \
@@ -248,14 +245,14 @@ PM_TO_BLIB = lib/Text/Tradition/Error.pm \
 	blib/lib/Text/Tradition/Collation/Data.pm \
 	lib/Text/Tradition/Parser/GraphML.pm \
 	blib/lib/Text/Tradition/Parser/GraphML.pm \
-	lib/Text/Tradition/Store.pm \
-	blib/lib/Text/Tradition/Store.pm \
+	merge.pl \
+	$(INST_LIB)/Text/merge.pl \
+	saverels.pl \
+	$(INST_LIB)/Text/saverels.pl \
 	lib/Text/Tradition/Parser/JSON.pm \
 	blib/lib/Text/Tradition/Parser/JSON.pm \
 	lib/Text/Tradition/Parser/Util.pm \
 	blib/lib/Text/Tradition/Parser/Util.pm \
-	lib/Text/Tradition/User.pm \
-	blib/lib/Text/Tradition/User.pm \
 	lib/Text/Tradition/Collation/RelationshipStore.pm \
 	blib/lib/Text/Tradition/Collation/RelationshipStore.pm \
 	lib/Text/Tradition/Parser/CollateText.pm \
@@ -264,20 +261,18 @@ PM_TO_BLIB = lib/Text/Tradition/Error.pm \
 	blib/lib/Text/Tradition/Parser/TEI.pm \
 	lib/Text/Tradition/Collation.pm \
 	blib/lib/Text/Tradition/Collation.pm \
+	munge.pl \
+	$(INST_LIB)/Text/munge.pl \
 	lib/Text/Tradition/Collation/Relationship.pm \
 	blib/lib/Text/Tradition/Collation/Relationship.pm \
 	lib/Text/Tradition/Parser/CTE.pm \
 	blib/lib/Text/Tradition/Parser/CTE.pm \
 	lib/Text/Tradition/Parser/Tabular.pm \
 	blib/lib/Text/Tradition/Parser/Tabular.pm \
-	lib/Text/Tradition/TypeMap/Entry.pm \
-	blib/lib/Text/Tradition/TypeMap/Entry.pm \
 	lib/Text/Tradition/Witness.pm \
 	blib/lib/Text/Tradition/Witness.pm \
 	lib/Text/Tradition/Parser/CollateX.pm \
-	blib/lib/Text/Tradition/Parser/CollateX.pm \
-	lib/Text/Tradition/Directory.pm \
-	blib/lib/Text/Tradition/Directory.pm
+	blib/lib/Text/Tradition/Parser/CollateX.pm
 
 
 # --- MakeMaker platform_constants section:
@@ -346,7 +341,7 @@ RCS_LABEL = rcs -Nv$(VERSION_SYM): -q
 DIST_CP = best
 DIST_DEFAULT = tardist
 DISTNAME = Text-Tradition
-DISTVNAME = Text-Tradition-1.0
+DISTVNAME = Text-Tradition-1.1
 
 
 # --- MakeMaker macro section:
@@ -508,7 +503,6 @@ manifypods : pure_all  \
 	lib/Text/Tradition/Parser/GraphML.pm \
 	lib/Text/Tradition/Parser/JSON.pm \
 	lib/Text/Tradition/Parser/Util.pm \
-	lib/Text/Tradition/User.pm \
 	lib/Text/Tradition/Collation/RelationshipStore.pm \
 	lib/Text/Tradition/Parser/CollateText.pm \
 	lib/Text/Tradition/Parser/TEI.pm \
@@ -517,8 +511,7 @@ manifypods : pure_all  \
 	lib/Text/Tradition/Parser/CTE.pm \
 	lib/Text/Tradition/Parser/Tabular.pm \
 	lib/Text/Tradition/Witness.pm \
-	lib/Text/Tradition/Parser/CollateX.pm \
-	lib/Text/Tradition/Directory.pm
+	lib/Text/Tradition/Parser/CollateX.pm
 	$(NOECHO) $(POD2MAN) --section=3 --perm_rw=$(PERM_RW) \
 	  lib/Text/Tradition/Error.pm $(INST_MAN3DIR)/Text::Tradition::Error.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/Self.pm $(INST_MAN3DIR)/Text::Tradition::Parser::Self.$(MAN3EXT) \
@@ -529,7 +522,6 @@ manifypods : pure_all  \
 	  lib/Text/Tradition/Parser/GraphML.pm $(INST_MAN3DIR)/Text::Tradition::Parser::GraphML.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/JSON.pm $(INST_MAN3DIR)/Text::Tradition::Parser::JSON.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/Util.pm $(INST_MAN3DIR)/Text::Tradition::Parser::Util.$(MAN3EXT) \
-	  lib/Text/Tradition/User.pm $(INST_MAN3DIR)/Text::Tradition::User.$(MAN3EXT) \
 	  lib/Text/Tradition/Collation/RelationshipStore.pm $(INST_MAN3DIR)/Text::Tradition::Collation::RelationshipStore.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/CollateText.pm $(INST_MAN3DIR)/Text::Tradition::Parser::CollateText.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/TEI.pm $(INST_MAN3DIR)/Text::Tradition::Parser::TEI.$(MAN3EXT) \
@@ -538,8 +530,7 @@ manifypods : pure_all  \
 	  lib/Text/Tradition/Parser/CTE.pm $(INST_MAN3DIR)/Text::Tradition::Parser::CTE.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/Tabular.pm $(INST_MAN3DIR)/Text::Tradition::Parser::Tabular.$(MAN3EXT) \
 	  lib/Text/Tradition/Witness.pm $(INST_MAN3DIR)/Text::Tradition::Witness.$(MAN3EXT) \
-	  lib/Text/Tradition/Parser/CollateX.pm $(INST_MAN3DIR)/Text::Tradition::Parser::CollateX.$(MAN3EXT) \
-	  lib/Text/Tradition/Directory.pm $(INST_MAN3DIR)/Text::Tradition::Directory.$(MAN3EXT) 
+	  lib/Text/Tradition/Parser/CollateX.pm $(INST_MAN3DIR)/Text::Tradition::Parser::CollateX.$(MAN3EXT) 
 
 
 
@@ -897,24 +888,16 @@ testdb_static :: testdb_dynamic
 # --- MakeMaker ppd section:
 # Creates a PPD (Perl Package Description) for a binary distribution.
 ppd :
-	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="1.0">' > $(DISTNAME).ppd
+	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="1.1">' > $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <ABSTRACT>a software model for a set of collated texts</ABSTRACT>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <AUTHOR>Tara L Andrews &lt;aurum@cpan.org&gt;</AUTHOR>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <IMPLEMENTATION>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <PERLCORE VERSION="5,012,0,0" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Algorithm::Diff" />' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Class::Load" />' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '        <REQUIRE NAME="DBI::" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="File::Which" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Graph::" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="IPC::Run" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="JSON::" />' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '        <REQUIRE NAME="KiokuDB::Backend::DBI" />' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '        <REQUIRE NAME="KiokuDB::GC::Naive" />' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '        <REQUIRE NAME="KiokuDB::TypeMap" />' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '        <REQUIRE NAME="KiokuDB::TypeMap::Entry::Naive" />' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '        <REQUIRE NAME="KiokuX::Model" />' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '        <REQUIRE NAME="KiokuX::User::Util" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Module::Load" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Moose::" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Moose::Util" />' >> $(DISTNAME).ppd
@@ -930,8 +913,6 @@ ppd :
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="XML::Easy::Syntax" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="XML::LibXML" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="XML::LibXML::XPathContext" />' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '        <REQUIRE NAME="YAML::XS" />' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '        <REQUIRE NAME="namespace::clean" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <ARCHITECTURE NAME="darwin-multi-2level-5.12" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <CODEBASE HREF="" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    </IMPLEMENTATION>' >> $(DISTNAME).ppd
@@ -950,21 +931,20 @@ pm_to_blib : $(FIRST_MAKEFILE) $(TO_INST_PM)
 	  lib/Text/Tradition/Parser/KUL.pm blib/lib/Text/Tradition/Parser/KUL.pm \
 	  lib/Text/Tradition/Collation/Data.pm blib/lib/Text/Tradition/Collation/Data.pm \
 	  lib/Text/Tradition/Parser/GraphML.pm blib/lib/Text/Tradition/Parser/GraphML.pm \
-	  lib/Text/Tradition/Store.pm blib/lib/Text/Tradition/Store.pm \
+	  merge.pl $(INST_LIB)/Text/merge.pl \
+	  saverels.pl $(INST_LIB)/Text/saverels.pl \
 	  lib/Text/Tradition/Parser/JSON.pm blib/lib/Text/Tradition/Parser/JSON.pm \
 	  lib/Text/Tradition/Parser/Util.pm blib/lib/Text/Tradition/Parser/Util.pm \
-	  lib/Text/Tradition/User.pm blib/lib/Text/Tradition/User.pm \
 	  lib/Text/Tradition/Collation/RelationshipStore.pm blib/lib/Text/Tradition/Collation/RelationshipStore.pm \
 	  lib/Text/Tradition/Parser/CollateText.pm blib/lib/Text/Tradition/Parser/CollateText.pm \
 	  lib/Text/Tradition/Parser/TEI.pm blib/lib/Text/Tradition/Parser/TEI.pm \
 	  lib/Text/Tradition/Collation.pm blib/lib/Text/Tradition/Collation.pm \
+	  munge.pl $(INST_LIB)/Text/munge.pl \
 	  lib/Text/Tradition/Collation/Relationship.pm blib/lib/Text/Tradition/Collation/Relationship.pm \
 	  lib/Text/Tradition/Parser/CTE.pm blib/lib/Text/Tradition/Parser/CTE.pm \
 	  lib/Text/Tradition/Parser/Tabular.pm blib/lib/Text/Tradition/Parser/Tabular.pm \
-	  lib/Text/Tradition/TypeMap/Entry.pm blib/lib/Text/Tradition/TypeMap/Entry.pm \
 	  lib/Text/Tradition/Witness.pm blib/lib/Text/Tradition/Witness.pm \
-	  lib/Text/Tradition/Parser/CollateX.pm blib/lib/Text/Tradition/Parser/CollateX.pm \
-	  lib/Text/Tradition/Directory.pm blib/lib/Text/Tradition/Directory.pm 
+	  lib/Text/Tradition/Parser/CollateX.pm blib/lib/Text/Tradition/Parser/CollateX.pm 
 	$(NOECHO) $(TOUCH) pm_to_blib
 
 

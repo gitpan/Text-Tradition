@@ -87,30 +87,14 @@ is( scalar $st->collation->paths, $PATHS, "Reparsed collation has all paths" );
 is( scalar $st->collation->relationships, 3, "Reparsed collation has new relationships" );
 
 # Now add a stemma, write to GraphML, and look at the output.
-my $SKIP_STEMMA;
-try {
-	$tradition->enable_stemmata;
-} catch {
-	$SKIP_STEMMA = 1;
-}
 SKIP: {
-	skip "Analysis module not present", 3 if $SKIP_STEMMA;
+	skip "Analysis module not present", 3 unless $tradition->can( 'add_stemma' );
 	my $stemma = $tradition->add_stemma( 'dotfile' => 't/data/florilegium.dot' );
 	is( ref( $stemma ), 'Text::Tradition::Stemma', "Parsed dotfile into stemma" );
 	is( $tradition->stemmata, 1, "Tradition now has the stemma" );
 	$graphml = $c->as_graphml;
 	like( $graphml, qr/digraph/, "Digraph declaration exists in GraphML" );
 }
-
-# Now add a user, write to GraphML, and look at the output.
-unlike( $graphml, qr/testuser/, "Test user name does not exist in GraphML yet" );
-my $testuser = Text::Tradition::User->new( 
-	id => 'testuser', password => 'testpass' );
-is( ref( $testuser ), 'Text::Tradition::User', "Created test user object" );
-$testuser->add_tradition( $tradition );
-is( $tradition->user->id, $testuser->id, "Tradition assigned to test user" );
-$graphml = $c->as_graphml;
-like( $graphml, qr/testuser/, "Test user name now exists in GraphML" );
 }
 
 
