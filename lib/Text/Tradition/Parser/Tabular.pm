@@ -68,6 +68,7 @@ an 'ante-correction' version of the 'main' witness whose sigil it shares.
 
 =begin testing
 
+use Test::More::UTF8;
 use Text::Tradition;
 binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
@@ -163,7 +164,8 @@ my $xtx = Text::Tradition->new(
 
 is( ref( $xtx ), 'Text::Tradition', "Parsed test Excel 2007+ file" );
 my %xlsx_wits;
-map { $xlsx_wits{$_} = 0 } qw/ Wit1 Wit2 Wit3 /;
+map { $xlsx_wits{$_} = 0 } qw/ Wit1 Wit3 /;
+$xlsx_wits{"\x{531}\x{562}2"} = 0;
 foreach my $wit ( $xtx->witnesses ) {
 	$xlsx_wits{$wit->sigil} = 1;
 }
@@ -287,8 +289,7 @@ sub parse {
 	
 	# Note that our ranks and common readings are set.
 	$c->_graphcalc_done(1);
-	# Remove redundant collation relationships.
-	$c->relations->filter_collations() unless $nocollate;
+	_add_collations( $c ) unless $nocollate;
 }
 
 sub _table_from_input {
@@ -380,7 +381,10 @@ sub _alignment_from_worksheet {
 	push( @$alignment_table, [] );
 	foreach my $col ( $cmin .. $cmax ) {
 		my $cell = $sheet->get_cell( $rmin, $col );
-		my $cellval = $cell ? $cell->value() : undef;
+		my $cellval;
+		if( $cell ) {
+			$cellval = $decode ? decode_utf8( $cell->value ) : $cell->value;
+		}
 		if( $cellval ) {
 			$sigcols{$col} = 1;
 			push( @{$alignment_table->[0]}, $cellval );
@@ -428,27 +432,43 @@ sub _make_nodes {
         $unique{$w} = $r;
         $ctr++;
     }
-    # Collate this sequence of readings via a single 'collation' relationship.
-    unless( $nocollate ) {
-		my @rankrdgs = values %unique;
-		my $collation_rel;
-		while( @rankrdgs ) {
-			my $r = shift @rankrdgs;
-			next if $r->is_meta;
-			foreach my $nr ( @rankrdgs ) {
-				next if $nr->is_meta;
-				if( $collation_rel ) {
-					$collation->add_relationship( $r, $nr, $collation_rel );
-				} else {
-					$collation->add_relationship( $r, $nr, 
-						{ 'type' => 'collated', 
-						  'annotation' => "Parsed together for rank $index" } );
-					$collation_rel = $collation->get_relationship( $r, $nr );
+    return \%unique;
+}
+
+sub _add_collations {
+	my( $collation ) = shift;
+	# For each reading that needs to be held in place, add a 'collated' 
+	# relationship to whatever anchor we can find. An anchor is a reading
+	# that would occupy its rank by virtue of being subsequent to a
+	# reading at $rank-1.
+	my @collate_pairs;
+	foreach my $r ( 1 .. $collation->end->rank - 1 ) {
+		my $anchor;
+		my @need_weak;
+		my @here = grep { !$_->is_meta } $collation->readings_at_rank( $r );
+		next unless @here > 1;
+		foreach my $rdg ( @here ) {
+			my $ip = 0;
+			foreach my $pred ( $rdg->predecessors ) {
+				if( $pred->rank == $r - 1 ) {
+					$ip = 1;
+					$anchor = $rdg unless( $anchor );
+					last;
 				}
 			}
+			push( @need_weak, $rdg ) unless $ip;
 		}
-	}    
-    return \%unique;
+		$anchor
+			? map { push( @collate_pairs, [ $r, $anchor, $_ ] ) } @need_weak
+			: print STDERR "No anchor found at $r\n";
+	}
+	foreach my $p ( @collate_pairs ) {
+		my $r = shift @$p;
+		$collation->add_relationship( @$p, 
+			{ 'type' => 'collated', 
+			  'annotation' => "Collated together for rank $r" } )
+			unless $collation->get_relationship( @$p )
+	}
 }
 
 sub throw {

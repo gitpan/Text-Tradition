@@ -2,6 +2,7 @@ package Text::Tradition::Parser::CTE;
 
 use strict;
 use warnings;
+use feature 'say';
 use Encode qw/ decode /;
 use Text::Tradition::Error;
 use Text::Tradition::Parser::Util qw/ collate_variants /;
@@ -49,7 +50,7 @@ sub parse {
 		my $id= $wit_el->getAttribute( 'xml:id' );
 		my @sig_parts = $xpc->findnodes( 'descendant::text()', $wit_el );
 		my $sig = _stringify_sigil( @sig_parts );
-		print STDERR "Adding witness $sig\n";
+		say STDERR "Adding witness $sig";
 		$tradition->add_witness( sigil => $sig, sourcetype => 'collation' );
 		$sigil_for{'#'.$id} = $sig;  # Make life easy by keying on the ID ref syntax
 	}
@@ -102,9 +103,11 @@ sub parse {
 
     # Save the text for each witness so that we can ensure consistency
     # later on
-	$tradition->collation->text_from_paths();	
-	$tradition->collation->calculate_ranks();
-	$tradition->collation->flatten_ranks();
+    unless( $opts->{'nocalc'} ) {
+		$tradition->collation->text_from_paths();	
+		$tradition->collation->calculate_ranks();
+		$tradition->collation->flatten_ranks();
+	}
 }
 
 sub _stringify_sigil {
@@ -138,10 +141,14 @@ sub _remove_formatting {
 		my $parent = $n->parentNode();
 		my @children = $n->childNodes();
 		my $first = shift @children;
-		$parent->replaceChild( $first, $n );
-		foreach my $c ( @children ) {
-			$parent->insertAfter( $c, $first );
-			$first = $c;
+		if( $first ) {
+			$parent->replaceChild( $first, $n );
+			foreach my $c ( @children ) {
+				$parent->insertAfter( $c, $first );
+				$first = $c;
+			}
+		} else {
+			$parent->removeChild( $n );
 		}
 	}
 	
@@ -174,10 +181,12 @@ sub _get_base {
 		push( @readings, { 'type' => 'app', 'content' => $xn } );
 	} elsif( $xn->nodeName eq 'anchor' ) {
 		# Anchor to mark the end of some apparatus; save its ID.
-		push( @readings, { 'type' => 'anchor', 
-		    'content' => $xn->getAttribute( 'xml:id' ) } );
-	} elsif ( $xn->nodeName ne 'note' ) {  # Any tag we don't know to disregard
-	    print STDERR "Unrecognized tag " . $xn->nodeName . "\n";
+		if( $xn->hasAttribute('xml:id') ) {
+			push( @readings, { 'type' => 'anchor', 
+			    'content' => $xn->getAttribute( 'xml:id' ) } );
+		} # if the anchor has no XML ID, it is not relevant to us.
+	} elsif ( $xn->nodeName !~ /^(note|seg|milestone|emph)$/ ) {  # Any tag we don't know to disregard
+	    say STDERR "Unrecognized tag " . $xn->nodeName;
 	}
 	return @readings;
 }
@@ -212,7 +221,7 @@ sub _add_readings {
     # Get the lemma, which is all the readings between app and anchor,
     # excluding other apps or anchors.
     my @lemma = _return_lemma( $c, $app_id, $anchor );
-    my $lemma_str = join( ' ', grep { $_ !~ /^__/ } map { $_->text } @lemma );
+    my $lemma_str = join( ' ',  map { $_->text } grep { !$_->is_ph } @lemma );
     
     # For each reading, send its text to 'interpret' along with the lemma,
     # and then save the list of witnesses that these tokens belong to.
@@ -305,6 +314,7 @@ sub interpret {
 	# $lemma =~ s/\s+[[:punct:]]+$//;
 	my $flag;  # In case of p.c. indications
 	my @words = split( /\s+/, $lemma );
+	$reading =~ s/[[:punct:]]?\bsic\b[[:punct:]]?//g;
 	if( $reading =~ /^(.*) praem.$/ ) {
 		$reading = "$1 $lemma";
 	} elsif( $reading =~ /^(.*) add.$/ ) {
@@ -326,7 +336,7 @@ sub interpret {
 	} elsif( $reading =~ /^in[uv]\.$/ 
 			 || $reading eq 'transp.' ) {
 		# Hope it is two words.
-		print STDERR "WARNING: want to invert a lemma that is not two words\n" 
+		say STDERR "WARNING: want to invert a lemma that is not two words" 
 			unless scalar( @words ) == 2;
 		$reading = join( ' ', reverse( @words ) );
 	} elsif( $reading =~ /^iter(\.|at)$/ ) {
@@ -346,7 +356,7 @@ sub interpret {
 		my @end = split( /\s+/, $2 );
 		if( scalar( @begin ) + scalar ( @end ) > scalar( @words ) ) {
 			# Something is wrong and we can't do the splice.
-			print STDERR "ERROR: $lemma is too short to accommodate $oldreading\n";
+			say STDERR "ERROR: $lemma is too short to accommodate $oldreading";
 		} else {
 			splice( @words, 0, scalar @begin, @begin );
 			splice( @words, -(scalar @end), scalar @end, @end );
@@ -356,7 +366,7 @@ sub interpret {
 	if( $oldreading ne $reading || $flag || $oldreading =~ /\./ ) {
 		my $int = $reading;
 		$int .= " ($flag)" if $flag;
-		print STDERR "Interpreted $oldreading as $int given $lemma\n";
+		# say STDERR "Interpreted $oldreading as $int given $lemma";
 	}
 	return( $reading, $flag );
 }
@@ -365,12 +375,12 @@ sub _parse_wit_detail {
     my( $detail, $readings, $lemma ) = @_;
     my $wit = $detail->getAttribute( 'wit' );
     my $content = $detail->textContent;
-    if( $content =~ /a\.\s*c\./ ) {
+    if( $content =~ /a\.\s*c\b/ ) {
         # Replace the key in the $readings hash
         my $rdg = delete $readings->{$wit};
         $readings->{$wit.'_ac'} = $rdg;
         $has_ac{$sigil_for{$wit}} = 1;
-    } elsif( $content =~ /p\.\s*c\./ ) {
+    } elsif( $content =~ /p\.\s*c\b/ ) {
         # If no key for the wit a.c. exists, add one pointing to the lemma
         unless( exists $readings->{$wit.'_ac'} ) {
             $readings->{$wit.'_ac'} = $lemma;
@@ -414,6 +424,16 @@ sub _expand_all_paths {
     
     # Make the path edges
     $c->make_witness_paths();
+    
+    # Now remove any orphan nodes, and warn that we are doing so.
+    while( $c->sequence->predecessorless_vertices > 1 ) {
+    	foreach my $v ( $c->sequence->predecessorless_vertices ) {
+	    	my $r = $c->reading( $v );
+	    	next if $r->is_start;
+    		say STDERR "Deleting orphan reading $r / " . $r->text;
+    		$c->del_reading( $r );
+    	}
+    }
 }
 
 sub _add_wit_path {

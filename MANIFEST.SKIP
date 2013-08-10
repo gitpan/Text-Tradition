@@ -3,4 +3,3 @@ lib/Text/Tradition/Parser/CollateText.pm
 lib/Text/Tradition/Parser/KUL.pm
 ^script
 ^backup
-^[a-z]*.pl

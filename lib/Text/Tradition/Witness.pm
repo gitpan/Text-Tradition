@@ -137,6 +137,7 @@ my $ptwit = $trad->add_witness(
 is( ref( $ptwit ), 'Text::Tradition::Witness', 'Created a witness' );
 if( $ptwit ) {
     is( $ptwit->sigil, 'A', "Witness has correct sigil" );
+    $c->make_witness_path( $ptwit );
     is( $c->path_text( $ptwit->sigil ), $str, "Witness has correct text" );
 }
 
@@ -180,6 +181,9 @@ if( $xpwit ) {
 
 =cut
 
+# Enable plugin(s) if available
+eval { with 'Text::Tradition::WitLanguage'; };
+	
 subtype 'SourceType',
 	as 'Str',
 	where { $_ =~ /^(xmldesc|plaintext|json|collation)$/ },
@@ -193,10 +197,10 @@ subtype 'Sigil',
 no Moose::Util::TypeConstraints;
 
 has 'tradition' => (
-	'is' => 'ro',
-	'isa' => 'Text::Tradition',
-	'required' => 1,
-        weak_ref => 1
+	is => 'ro',
+	isa => 'Text::Tradition',
+	required => 1,
+	weak_ref => 1
 	);
 
 # Sigil. Required identifier for a witness, but may be found inside
@@ -277,6 +281,11 @@ has 'layertext' => (
 	predicate => 'has_layertext',
 	);
 	
+has 'is_collated' => (
+	is => 'rw',
+	isa => 'Bool'
+	);
+	
 # Path.	 This is an array of Reading nodes that can be saved during
 # initialization, but should be cleared before saving in a DB.
 has 'path' => (
@@ -314,7 +323,10 @@ sub BUILD {
 		$self->$init_sub();
 		# Remove our XML / source objects; we no longer need them.
 		$self->clear_object if $self->has_object;
-		$self->tradition->collation->make_witness_path( $self );
+		# $self->tradition->collation->make_witness_path( $self );
+	}
+	if( $self->sourcetype eq 'collation' ) {
+		$self->is_collated( 1 );
 	}
 	return $self;
 }
@@ -659,6 +671,9 @@ sub _init_from_json {
 
 sub _init_from_plaintext {
     my( $self ) = @_;
+    unless( $self->has_sigil ) {
+    	throw( "No sigil defined for the plaintext witness" );
+    }
     my $str;
     if( $self->has_file ) {
     	my $ok = open( INPUT, $self->file );
@@ -762,7 +777,7 @@ sub export_as_json {
 		'name' => $self->identifier,
 	};
 	if( $self->is_layered ) {
-		my @lwlist = map { { 't' => $_ || '' } } @{$self->uncorrected};
+		my @lwlist = map { { 't' => $_ || '' } } @{$self->layertext};
 		$obj->{'layertokens'} = \@lwlist;
 	}
 	return $obj;

@@ -159,15 +159,6 @@ See L<Text::Tradition::Collation::Reading> for the available arguments.
 Removes the given reading from the collation, implicitly removing its
 paths and relationships.
 
-=head2 merge_readings( $main, $second, $concatenate, $with_str )
-
-Merges the $second reading into the $main one. If $concatenate is true, then
-the merged node will carry the text of both readings, concatenated with either
-$with_str (if specified) or a sensible default (the empty string if the
-appropriate 'join_*' flag is set on either reading, or else $self->wordsep.)
-
-The first two arguments may be either readings or reading IDs.
-
 =head2 has_reading( $id )
 
 Predicate to see whether a given reading ID is in the graph.
@@ -233,6 +224,15 @@ sub BUILD {
     	{ 'collation' => $self, 'is_end' => 1, 'init' => 1 } ) );
 }
 
+sub register_relationship_type {
+	my $self = shift;
+	my %args = @_ == 1 ? %{$_[0]} : @_;
+	if( $self->relations->has_type( $args{name} ) ) {
+		throw( 'Relationship type ' . $args{name} . ' already registered' );
+	}
+	$self->relations->add_type( %args );
+}
+
 ### Reading construct/destruct functions
 
 sub add_reading {
@@ -281,6 +281,15 @@ around del_reading => sub {
 	$self->$orig( $arg );
 };
 
+=head2 merge_readings( $main, $second, $concatenate, $with_str )
+
+Merges the $second reading into the $main one. If $concatenate is true, then
+the merged node will carry the text of both readings, concatenated with either
+$with_str (if specified) or a sensible default (the empty string if the
+appropriate 'join_*' flag is set on either reading, or else $self->wordsep.)
+
+The first two arguments may be either readings or reading IDs.
+
 =begin testing
 
 use Text::Tradition;
@@ -294,13 +303,14 @@ my $t = Text::Tradition->new(
 my $c = $t->collation;
 
 my $rno = scalar $c->readings;
-# Split n21 for testing purposes
+# Split n21 ('unto') for testing purposes
 my $new_r = $c->add_reading( { 'id' => 'n21p0', 'text' => 'un', 'join_next' => 1 } );
 my $old_r = $c->reading( 'n21' );
 $old_r->alter_text( 'to' );
 $c->del_path( 'n20', 'n21', 'A' );
 $c->add_path( 'n20', 'n21p0', 'A' );
 $c->add_path( 'n21p0', 'n21', 'A' );
+$c->add_relationship( 'n21', 'n22', { type => 'collated', scope => 'local' } );
 $c->flatten_ranks();
 ok( $c->reading( 'n21p0' ), "New reading exists" );
 is( scalar $c->readings, $rno, "Reading add offset by flatten_ranks" );
@@ -443,6 +453,154 @@ sub _objectify_args {
         unless ref( $second ) eq 'Text::Tradition::Collation::Reading';        
     return( $first, $second, $arg );
 }
+
+=head2 duplicate_reading( $reading, @witlist )
+
+Split the given reading into two, so that the new reading is in the path for
+the witnesses given in @witlist. If the result is that certain non-colocated
+relationships (e.g. transpositions) are no longer valid, these will be removed.
+Returns the newly-created reading.
+
+=begin testing
+
+use Text::Tradition;
+
+my $st = Text::Tradition->new( 'input' => 'Self', 'file' => 't/data/collatecorr.xml' );
+is( ref( $st ), 'Text::Tradition', "Got a tradition from test file" );
+ok( $st->has_witness('Ba96'), "Tradition has the affected witness" );
+
+my $sc = $st->collation;
+my $numr = 17;
+ok( $sc->reading('n131'), "Tradition has the affected reading" );
+is( scalar( $sc->readings ), $numr, "There are $numr readings in the graph" );
+is( $sc->end->rank, 14, "There are fourteen ranks in the graph" );
+
+# Detach the erroneously collated reading
+my( $newr, @del_rdgs ) = $sc->duplicate_reading( 'n131', 'Ba96' );
+ok( $newr, "New reading was created" );
+ok( $sc->reading('n131_0'), "Detached the bad collation with a new reading" );
+is( scalar( $sc->readings ), $numr + 1, "A reading was added to the graph" );
+is( $sc->end->rank, 10, "There are now only ten ranks in the graph" );
+my $csucc = $sc->common_successor( 'n131', 'n131_0' );
+is( $csucc->id, 'n136', "Found correct common successor to duped reading" ); 
+
+# Check that the bad transposition is gone
+is( scalar @del_rdgs, 1, "Deleted reading was returned by API call" );
+is( $sc->get_relationship( 'n130', 'n135' ), undef, "Bad transposition relationship is gone" );
+
+# The collation should not be fixed
+my @pairs = $sc->identical_readings();
+is( scalar @pairs, 0, "Not re-collated yet" );
+# Fix the collation
+ok( $sc->merge_readings( 'n124', 'n131_0' ), "Collated the readings correctly" );
+@pairs = $sc->identical_readings( start => 'n124', end => $csucc->id );
+is( scalar @pairs, 3, "Found three more identical readings" );
+is( $sc->end->rank, 11, "The ranks shifted appropriately" );
+$sc->flatten_ranks();
+is( scalar( $sc->readings ), $numr - 3, "Now we are collated correctly" );
+
+=end testing
+
+=cut
+
+sub duplicate_reading {
+	my( $self, $r, @wits ) = @_;
+	# Add the new reading, duplicating $r.
+	unless( ref( $r ) eq 'Text::Tradition::Collation::Reading' ) {
+		$r = $self->reading( $r );
+	}
+	throw( "Cannot duplicate a meta-reading" )
+		if $r->is_meta;
+	
+	# Get all the reading attributes and duplicate them.	
+	my $rmeta = Text::Tradition::Collation::Reading->meta;
+	my %args;
+    foreach my $attr( $rmeta->get_all_attributes ) {
+		next if $attr->name =~ /^_/;
+		my $acc = $attr->get_read_method;
+		if( !$acc && $attr->has_applied_traits ) {
+			my $tr = $attr->applied_traits;
+			if( $tr->[0] =~ /::(Array|Hash)$/ ) {
+				my $which = $1;
+				my %methods = reverse %{$attr->handles};
+				$acc = $methods{elements};
+				$args{$attr->name} = $which eq 'Array' 
+					? [ $r->$acc ] : { $r->$acc };
+			} 
+		} else {
+			$args{$attr->name} = $r->$acc if $acc;
+		}
+	}
+	# By definition the new reading will no longer be common.
+	$args{is_common} = 0;
+	# The new reading also needs its own ID.
+	$args{id} = $self->_generate_dup_id( $r->id );
+
+	# Try to make the new reading.
+	my $newr = $self->add_reading( \%args );
+	# The old reading is also no longer common.
+	$r->is_common( 0 );
+	
+	# For each of the witnesses, dissociate from the old reading and
+	# associate with the new.
+	foreach my $wit ( @wits ) {
+		my $prior = $self->prior_reading( $r, $wit );
+		my $next = $self->next_reading( $r, $wit );
+		$self->del_path( $prior, $r, $wit );
+		$self->add_path( $prior, $newr, $wit );
+		$self->del_path( $r, $next, $wit );
+		$self->add_path( $newr, $next, $wit );
+	}
+	
+	# If the graph is ranked, we need to look for relationships that are now
+	# invalid (i.e. 'non-colocation' types that might now be colocated) and
+	# remove them. If not, we can skip it.
+	my $succ;
+	my %rrk;
+	my @deleted_relations;
+	if( $self->end->has_rank ) {
+		# Find the point where we can stop checking
+		$succ = $self->common_successor( $r, $newr );
+		
+		# Hash the existing ranks
+		foreach my $rdg ( $self->readings ) {
+			$rrk{$rdg->id} = $rdg->rank;
+		}
+		# Calculate the new ranks	
+		$self->calculate_ranks();
+	
+		# Check for invalid non-colocated relationships among changed-rank readings
+		# from where the ranks start changing up to $succ
+		my $lastrank = $succ->rank;
+		foreach my $rdg ( $self->readings ) {
+			next if $rdg->rank > $lastrank;
+			next if $rdg->rank == $rrk{$rdg->id};
+			my @noncolo = $rdg->related_readings( sub { !$_[0]->colocated } );
+			next unless @noncolo;
+			foreach my $nc ( @noncolo ) {
+				unless( $self->relations->verify_or_delete( $rdg, $nc ) ) {
+					push( @deleted_relations, [ $rdg->id, $nc->id ] );
+				}
+			}
+		}
+	}
+	return ( $newr, @deleted_relations );
+}
+
+sub _generate_dup_id {
+	my( $self, $rid ) = @_;
+	my $newid;
+	my $i = 0;
+	while( !$newid ) {
+		$newid = $rid."_$i";
+		if( $self->has_reading( $newid ) ) {
+			$newid = '';
+			$i++;
+		}
+	}
+	return $newid;
+}
+
 ### Path logic
 
 sub add_path {
@@ -472,7 +630,7 @@ sub del_path {
 		@args = @_;
 	}
 
-	# We only need the IDs for adding paths to the graph, not the reading
+	# We only need the IDs for removing paths from the graph, not the reading
 	# objects themselves.
     my( $source, $target, $wit ) = $self->_stringify_args( @args );
 
@@ -480,7 +638,7 @@ sub del_path {
 	if( $self->sequence->has_edge_attribute( $source, $target, $wit ) ) {
 		$self->sequence->delete_edge_attribute( $source, $target, $wit );
 	}
-	unless( keys %{$self->sequence->get_edge_attributes( $source, $target )} ) {
+	unless( $self->sequence->has_edge_attributes( $source, $target ) ) {
 		$self->sequence->delete_edge( $source, $target );
 		$self->relations->delete_equivalence_edge( $source, $target );
 	}
@@ -526,7 +684,15 @@ sub add_relationship {
 	my $self = shift;
     my( $source, $target, $opts ) = $self->_stringify_args( @_ );
     my( @vectors ) = $self->relations->add_relationship( $source, $target, $opts );
-	$self->_graphcalc_done(0);
+    foreach my $v ( @vectors ) {
+    	next unless $self->get_relationship( $v )->colocated;
+    	if( $self->reading( $v->[0] )->has_rank && $self->reading( $v->[1] )->has_rank
+    		&& $self->reading( $v->[0] )->rank ne $self->reading( $v->[1] )->rank ) {
+    			$self->_graphcalc_done(0);
+    			$self->_clear_cache;
+    			last;
+    	}
+    }
     return @vectors;
 }
 
@@ -537,8 +703,8 @@ around qw/ get_relationship del_relationship / => sub {
 	if( @args == 1 && ref( $args[0] ) eq 'ARRAY' ) {
 		@args = @{$_[0]};
 	}
-	my( $source, $target ) = $self->_stringify_args( @args );
-	$self->$orig( $source, $target );
+	my @stringargs = $self->_stringify_args( @args );
+	$self->$orig( @stringargs );
 };
 
 =head2 reading_witnesses( $reading )
@@ -552,7 +718,7 @@ sub reading_witnesses {
 	# We need only check either the incoming or the outgoing edges; I have
 	# arbitrarily chosen "incoming".  Thus, special-case the start node.
 	if( $reading eq $self->start ) {
-		return map { $_->sigil } $self->tradition->witnesses;
+		return map { $_->sigil } grep { $_->is_collated } $self->tradition->witnesses;
 	}
 	my %all_witnesses;
 	foreach my $e ( $self->sequence->edges_to( $reading ) ) {
@@ -733,6 +899,32 @@ sub as_dot {
         	$substart{$edge->[1]} = $edge->[0];
         }
     }
+    
+    # If we are asked to, add relationship links
+    if( exists $opts->{show_relations} ) {
+    	my $filter = $opts->{show_relations}; # can be 'transposition' or 'all'
+    	if( $filter eq 'transposition' ) {
+    		$filter =~ qr/^transposition$/;
+    	}
+    	foreach my $redge ( $self->relationships ) {
+    		if( $used{$redge->[0]} && $used{$redge->[1]} ) {
+    			if( $filter ne 'all' ) {
+    				my $rel = $self->get_relationship( $redge );
+    				next unless $rel->type =~ /$filter/;
+					my $variables = { 
+						arrowhead => 'none',
+						color => '#FFA14F',
+						constraint => 'false',
+						label => uc( substr( $rel->type, 0, 4 ) ), 
+						penwidth => '3',
+					};
+					$dot .= sprintf( "\t\"%s\" -> \"%s\" %s;\n",
+						$redge->[0], $redge->[1], _dot_attr_string( $variables ) );
+				}
+    		}
+    	}
+    }
+    
     # Add substitute start and end edges if necessary
     foreach my $node ( keys %substart ) {
     	my $witstr = $self->_path_display_label ( $self->path_witnesses( $substart{$node}, $node ) );
@@ -977,6 +1169,8 @@ sub as_graphml {
     my %graph_attributes = ( 'version' => 'string' );
 	# Graph attributes include those of Tradition and those of Collation.
 	my %gattr_from;
+	# TODO Use meta introspection method from duplicate_reading to do this
+	# instead of naming custom keys.
 	my $tmeta = $self->tradition->meta;
 	my $cmeta = $self->meta;
 	map { $gattr_from{$_->name} = 'Tradition' } $tmeta->get_all_attributes;
@@ -1207,7 +1401,7 @@ sub as_csv {
     return join( "\n", @result );
 }
 
-=head2 alignment_table( $use_refs, $include_witnesses )
+=head2 alignment_table
 
 Return a reference to an alignment table, in a slightly enhanced CollateX
 format which looks like this:
@@ -1219,38 +1413,35 @@ format which looks like this:
                            ... ],
             length => TEXTLEN };
 
-If $use_refs is set to 1, the reading object is returned in the table 
-instead of READINGTEXT; if not, the text of the reading is returned.
-
-If $include_witnesses is set to a hashref, only the witnesses whose sigil
-keys have a true hash value will be included.
-
 =cut
 
 sub alignment_table {
     my( $self ) = @_;
-    $self->calculate_ranks() unless $self->_graphcalc_done;
     return $self->cached_table if $self->has_cached_table;
     
     # Make sure we can do this
 	throw( "Need a linear graph in order to make an alignment table" )
 		unless $self->linear;
-	$self->calculate_ranks unless $self->end->has_rank;
-	
+    $self->calculate_ranks() 
+    	unless $self->_graphcalc_done && $self->end->has_rank;
+
     my $table = { 'alignment' => [], 'length' => $self->end->rank - 1 };
     my @all_pos = ( 1 .. $self->end->rank - 1 );
     foreach my $wit ( sort { $a->sigil cmp $b->sigil } $self->tradition->witnesses ) {
         # say STDERR "Making witness row(s) for " . $wit->sigil;
         my @wit_path = $self->reading_sequence( $self->start, $self->end, $wit->sigil );
         my @row = _make_witness_row( \@wit_path, \@all_pos );
-        push( @{$table->{'alignment'}}, 
-        	{ 'witness' => $wit->sigil, 'tokens' => \@row } );
+        my $witobj = { 'witness' => $wit->sigil, 'tokens' => \@row };
+        $witobj->{'identifier'} = $wit->identifier if $wit->identifier;
+        push( @{$table->{'alignment'}}, $witobj );
         if( $wit->is_layered ) {
         	my @wit_ac_path = $self->reading_sequence( $self->start, $self->end, 
         		$wit->sigil.$self->ac_label );
             my @ac_row = _make_witness_row( \@wit_ac_path, \@all_pos );
-			push( @{$table->{'alignment'}},
-				{ 'witness' => $wit->sigil.$self->ac_label, 'tokens' => \@ac_row } );
+            my $witacobj = { 'witness' => $wit->sigil.$self->ac_label, 
+            	'tokens' => \@ac_row };
+            $witacobj->{'identifier'} = $wit->identifier if $wit->identifier;
+			push( @{$table->{'alignment'}}, $witacobj );
         }           
     }
     $self->cached_table( $table );
@@ -1282,6 +1473,7 @@ sub _make_witness_row {
     }
     return @filled_row;
 }
+
 
 =head1 NAVIGATION METHODS
 
@@ -1541,8 +1733,10 @@ ok( $c->has_cached_table, "Alignment table was cached" );
 is( $c->alignment_table, $table, "Cached table returned upon second call" );
 $c->calculate_ranks;
 is( $c->alignment_table, $table, "Cached table retained with no rank change" );
-$c->add_relationship( 'n24', 'n23', { 'type' => 'spelling' } );
-isnt( $c->alignment_table, $table, "Alignment table changed after relationship add" );
+$c->add_relationship( 'n13', 'n23', { type => 'repetition' } );
+is( $c->alignment_table, $table, "Alignment table unchanged after non-colo relationship add" );
+$c->add_relationship( 'n24', 'n23', { type => 'spelling' } );
+isnt( $c->alignment_table, $table, "Alignment table changed after colo relationship add" );
 
 =end testing
 
@@ -1601,29 +1795,71 @@ with the same text at the same rank, and merges any that are found.
 =cut
 
 sub flatten_ranks {
-    my $self = shift;
+    my ( $self, %args ) = shift;
     my %unique_rank_rdg;
     my $changed;
-    foreach my $rdg ( $self->readings ) {
-        next unless $rdg->has_rank;
-        my $key = $rdg->rank . "||" . $rdg->text;
-        if( exists $unique_rank_rdg{$key} ) {
-        	# Make sure they don't have different grammatical forms
-			my $ur = $unique_rank_rdg{$key};
-        	if( $rdg->is_identical( $ur ) ) {
-				# Combine!
-				#say STDERR "Combining readings at same rank: $key";
-				$changed = 1;
-				$self->merge_readings( $unique_rank_rdg{$key}, $rdg );
-				# TODO see if this now makes a common point.
-			}
-        } else {
-            $unique_rank_rdg{$key} = $rdg;
-        }
+    foreach my $p ( $self->identical_readings( %args ) ) {
+		# say STDERR "Combining readings at same rank: @$p";
+		$changed = 1;
+		$self->merge_readings( @$p );
+		# TODO see if this now makes a common point.
     }
     # If we merged readings, the ranks are still fine but the alignment
     # table is wrong. Wipe it.
     $self->wipe_table() if $changed;
+}
+
+=head2 identical_readings
+=head2 identical_readings( start => $startnode, end => $endnode )
+=head2 identical_readings( startrank => $startrank, endrank => $endrank )
+
+Goes through the graph identifying all pairs of readings that appear to be
+identical, and therefore able to be merged into a single reading. Returns the 
+relevant identical pairs. Can be restricted to run over only a part of the 
+graph, specified either by node or by rank.
+
+=cut
+
+sub identical_readings {
+	my ( $self, %args ) = @_;
+    # Find where we should start and end.
+    my $startrank = $args{startrank} || 0;
+    if( $args{start} ) {
+    	throw( "Starting reading has no rank" ) unless $self->reading( $args{start} ) 
+    		&& $self->reading( $args{start} )->has_rank;
+    	$startrank = $self->reading( $args{start} )->rank;
+    }
+    my $endrank = $args{endrank} || $self->end->rank;
+    if( $args{end} ) {
+    	throw( "Ending reading has no rank" ) unless $self->reading( $args{end} ) 
+    		&& $self->reading( $args{end} )->has_rank;
+    	$endrank = $self->reading( $args{end} )->rank;
+    }
+    
+    # Make sure the ranks are correct.
+    unless( $self->_graphcalc_done ) {
+    	$self->calculate_ranks;
+    }
+    # Go through the readings looking for duplicates.
+    my %unique_rank_rdg;
+    my @pairs;
+    foreach my $rdg ( $self->readings ) {
+        next unless $rdg->has_rank;
+        my $rk = $rdg->rank;
+        next if $rk > $endrank || $rk < $startrank;
+        my $key = $rk . "||" . $rdg->text;
+        if( exists $unique_rank_rdg{$key} ) {
+        	# Make sure they don't have different grammatical forms
+			my $ur = $unique_rank_rdg{$key};
+        	if( $rdg->is_identical( $ur ) ) {
+				push( @pairs, [ $ur, $rdg ] );
+			}
+        } else {
+            $unique_rank_rdg{$key} = $rdg;
+        }
+    }	
+    
+    return @pairs;
 }
 	
 

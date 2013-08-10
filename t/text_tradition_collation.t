@@ -19,13 +19,14 @@ my $t = Text::Tradition->new(
 my $c = $t->collation;
 
 my $rno = scalar $c->readings;
-# Split n21 for testing purposes
+# Split n21 ('unto') for testing purposes
 my $new_r = $c->add_reading( { 'id' => 'n21p0', 'text' => 'un', 'join_next' => 1 } );
 my $old_r = $c->reading( 'n21' );
 $old_r->alter_text( 'to' );
 $c->del_path( 'n20', 'n21', 'A' );
 $c->add_path( 'n20', 'n21p0', 'A' );
 $c->add_path( 'n21p0', 'n21', 'A' );
+$c->add_relationship( 'n21', 'n22', { type => 'collated', scope => 'local' } );
 $c->flatten_ranks();
 ok( $c->reading( 'n21p0' ), "New reading exists" );
 is( scalar $c->readings, $rno, "Reading add offset by flatten_ranks" );
@@ -46,6 +47,47 @@ $remaining ||= $c->reading('n22');  # one of these should still exist
 $c->merge_readings( 'n21p0', $remaining, 1 );
 ok( !$c->reading('n21'), "Reading $remaining is gone" );
 is( $c->reading('n21p0')->text, 'unto', "Reading n21p0 merged correctly" );
+}
+
+
+
+# =begin testing
+{
+use Text::Tradition;
+
+my $st = Text::Tradition->new( 'input' => 'Self', 'file' => 't/data/collatecorr.xml' );
+is( ref( $st ), 'Text::Tradition', "Got a tradition from test file" );
+ok( $st->has_witness('Ba96'), "Tradition has the affected witness" );
+
+my $sc = $st->collation;
+my $numr = 17;
+ok( $sc->reading('n131'), "Tradition has the affected reading" );
+is( scalar( $sc->readings ), $numr, "There are $numr readings in the graph" );
+is( $sc->end->rank, 14, "There are fourteen ranks in the graph" );
+
+# Detach the erroneously collated reading
+my( $newr, @del_rdgs ) = $sc->duplicate_reading( 'n131', 'Ba96' );
+ok( $newr, "New reading was created" );
+ok( $sc->reading('n131_0'), "Detached the bad collation with a new reading" );
+is( scalar( $sc->readings ), $numr + 1, "A reading was added to the graph" );
+is( $sc->end->rank, 10, "There are now only ten ranks in the graph" );
+my $csucc = $sc->common_successor( 'n131', 'n131_0' );
+is( $csucc->id, 'n136', "Found correct common successor to duped reading" ); 
+
+# Check that the bad transposition is gone
+is( scalar @del_rdgs, 1, "Deleted reading was returned by API call" );
+is( $sc->get_relationship( 'n130', 'n135' ), undef, "Bad transposition relationship is gone" );
+
+# The collation should not be fixed
+my @pairs = $sc->identical_readings();
+is( scalar @pairs, 0, "Not re-collated yet" );
+# Fix the collation
+ok( $sc->merge_readings( 'n124', 'n131_0' ), "Collated the readings correctly" );
+@pairs = $sc->identical_readings( start => 'n124', end => $csucc->id );
+is( scalar @pairs, 3, "Found three more identical readings" );
+is( $sc->end->rank, 11, "The ranks shifted appropriately" );
+$sc->flatten_ranks();
+is( scalar( $sc->readings ), $numr - 3, "Now we are collated correctly" );
 }
 
 
@@ -117,8 +159,10 @@ ok( $c->has_cached_table, "Alignment table was cached" );
 is( $c->alignment_table, $table, "Cached table returned upon second call" );
 $c->calculate_ranks;
 is( $c->alignment_table, $table, "Cached table retained with no rank change" );
-$c->add_relationship( 'n24', 'n23', { 'type' => 'spelling' } );
-isnt( $c->alignment_table, $table, "Alignment table changed after relationship add" );
+$c->add_relationship( 'n13', 'n23', { type => 'repetition' } );
+is( $c->alignment_table, $table, "Alignment table unchanged after non-colo relationship add" );
+$c->add_relationship( 'n24', 'n23', { type => 'spelling' } );
+isnt( $c->alignment_table, $table, "Alignment table changed after colo relationship add" );
 }
 
 
