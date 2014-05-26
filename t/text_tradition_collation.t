@@ -9,6 +9,7 @@ $| = 1;
 # =begin testing
 {
 use Text::Tradition;
+use TryCatch;
 
 my $cxfile = 't/data/Collatex-16.xml';
 my $t = Text::Tradition->new( 
@@ -41,19 +42,84 @@ $c->merge_readings( 'n9', 'n10' );
 ok( !$c->reading('n10'), "Reading n10 is gone" );
 is( $c->reading('n9')->text, 'rood', "Reading n9 has an unchanged word" );
 
-# Combine n21 and n21p0
+# Try to combine n21 and n21p0. This should break.
 my $remaining = $c->reading('n21');
 $remaining ||= $c->reading('n22');  # one of these should still exist
-$c->merge_readings( 'n21p0', $remaining, 1 );
-ok( !$c->reading('n21'), "Reading $remaining is gone" );
-is( $c->reading('n21p0')->text, 'unto', "Reading n21p0 merged correctly" );
+try {
+	$c->merge_readings( 'n21p0', $remaining, 1 );
+	ok( 0, "Bad reading merge changed the graph" );
+} catch( Text::Tradition::Error $e ) {
+	like( $e->message, qr/neither concatenated nor collated/, "Expected exception from bad concatenation" );
+} catch {
+	ok( 0, "Unexpected error on bad reading merge: $@" );
+}
+
+try {
+	$c->calculate_ranks();
+	ok( 1, "Graph is still evidently whole" );
+} catch( Text::Tradition::Error $e ) {
+	ok( 0, "Caught a rank exception: " . $e->message );
+}
 }
 
 
 
 # =begin testing
 {
+use Test::Warn;
 use Text::Tradition;
+use TryCatch;
+
+my $t;
+warnings_exist {
+	$t = Text::Tradition->new( 'input' => 'Self', 'file' => 't/data/legendfrag.xml' );
+} [qr/Cannot set relationship on a meta reading/],
+	"Got expected relationship drop warning on parse";
+
+my $c = $t->collation;
+
+my %rdg_ids;
+map { $rdg_ids{$_} = 1 } $c->readings;
+$c->merge_related( 'orthographic' );
+is( scalar( $c->readings ), keys( %rdg_ids ) - 9, 
+	"Successfully collapsed orthographic variation" );
+map { $rdg_ids{$_} = undef } qw/ r13.3 r11.4 r8.5 r8.2 r7.7 r7.5 r7.4 r7.3 r7.1 /;
+foreach my $rid ( keys %rdg_ids ) {
+	my $exp = $rdg_ids{$rid};
+	is( !$c->reading( $rid ), !$exp, "Reading $rid correctly " . 
+		( $exp ? "retained" : "removed" ) );
+}
+ok( $c->linear, "Graph is still linear" );
+try {
+	$c->calculate_ranks; # This should succeed
+	ok( 1, "Can still calculate ranks on the new graph" );
+} catch {
+	ok( 0, "Rank calculation on merged graph failed: $@" );
+}
+
+# Now add some transpositions
+$c->add_relationship( 'r8.4', 'r10.4', { type => 'transposition' } );
+$c->merge_related( 'transposition' );
+is( scalar( $c->readings ), keys( %rdg_ids ) - 10, 
+	"Transposed relationship is merged away" );
+ok( !$c->reading('r8.4'), "Correct transposed reading removed" );
+ok( !$c->linear, "Graph is no longer linear" );
+try {
+	$c->calculate_ranks; # This should fail
+	ok( 0, "Rank calculation happened on nonlinear graph?!" );
+} catch ( Text::Tradition::Error $e ) {
+	is( $e->message, 'Cannot calculate ranks on a non-linear graph', 
+		"Rank calculation on merged graph threw an error" );
+}
+}
+
+
+
+# =begin testing
+{
+use Test::More::UTF8;
+use Text::Tradition;
+use TryCatch;
 
 my $st = Text::Tradition->new( 'input' => 'Self', 'file' => 't/data/collatecorr.xml' );
 is( ref( $st ), 'Text::Tradition', "Got a tradition from test file" );
@@ -88,6 +154,34 @@ is( scalar @pairs, 3, "Found three more identical readings" );
 is( $sc->end->rank, 11, "The ranks shifted appropriately" );
 $sc->flatten_ranks();
 is( scalar( $sc->readings ), $numr - 3, "Now we are collated correctly" );
+
+# Check that we can't "duplicate" a reading with no wits or with all wits
+try {
+	my( $badr, @del_rdgs ) = $sc->duplicate_reading( 'n124' );
+	ok( 0, "Reading duplication without witnesses throws an error" );
+} catch( Text::Tradition::Error $e ) {
+	like( $e->message, qr/Must specify one or more witnesses/, 
+		"Reading duplication without witnesses throws the expected error" );
+} catch {
+	ok( 0, "Reading duplication without witnesses threw the wrong error" );
+}
+
+try {
+	my( $badr, @del_rdgs ) = $sc->duplicate_reading( 'n124', 'Ba96', 'Mü11475' );
+	ok( 0, "Reading duplication with all witnesses throws an error" );
+} catch( Text::Tradition::Error $e ) {
+	like( $e->message, qr/Cannot join all witnesses/, 
+		"Reading duplication with all witnesses throws the expected error" );
+} catch {
+	ok( 0, "Reading duplication with all witnesses threw the wrong error" );
+}
+
+try {
+	$sc->calculate_ranks();
+	ok( 1, "Graph is still evidently whole" );
+} catch( Text::Tradition::Error $e ) {
+	ok( 0, "Caught a rank exception: " . $e->message );
+}
 }
 
 
@@ -118,7 +212,8 @@ is( scalar $c->relationships, 0, "Collation has all relationships" );
 # Add a few relationships
 $c->add_relationship( 'w123', 'w125', { 'type' => 'collated' } );
 $c->add_relationship( 'w193', 'w196', { 'type' => 'collated' } );
-$c->add_relationship( 'w257', 'w262', { 'type' => 'transposition' } );
+$c->add_relationship( 'w257', 'w262', { 'type' => 'transposition', 
+					  'is_significant' => 'yes' } );
 
 # Now write it to GraphML and parse it again.
 
@@ -127,6 +222,8 @@ my $st = Text::Tradition->new( 'input' => 'Self', 'string' => $graphml );
 is( scalar $st->collation->readings, $READINGS, "Reparsed collation has all readings" );
 is( scalar $st->collation->paths, $PATHS, "Reparsed collation has all paths" );
 is( scalar $st->collation->relationships, 3, "Reparsed collation has new relationships" );
+my $sigrel = $st->collation->get_relationship( 'w257', 'w262' );
+is( $sigrel->is_significant, 'yes', "Ternary attribute value was restored" );
 
 # Now add a stemma, write to GraphML, and look at the output.
 SKIP: {
@@ -137,6 +234,67 @@ SKIP: {
 	$graphml = $c->as_graphml;
 	like( $graphml, qr/digraph/, "Digraph declaration exists in GraphML" );
 }
+}
+
+
+
+# =begin testing
+{
+use Text::Tradition;
+use Text::CSV;
+
+my $READINGS = 311;
+my $PATHS = 361;
+my $WITS = 13;
+my $WITAC = 4;
+
+my $datafile = 't/data/florilegium_tei_ps.xml';
+my $tradition = Text::Tradition->new( 'input' => 'TEI',
+                                      'name' => 'test0',
+                                      'file' => $datafile,
+                                      'linear' => 1 );
+
+my $c = $tradition->collation;
+# Export the thing to CSV
+my $csvstr = $c->as_csv();
+# Count the columns
+my $csv = Text::CSV->new({ sep_char => ',', binary => 1 });
+my @lines = split(/\n/, $csvstr );
+ok( $csv->parse( $lines[0] ), "Successfully parsed first line of CSV" );
+is( scalar( $csv->fields ), $WITS + $WITAC, "CSV has correct number of witness columns" );
+my @q_ac = grep { $_ eq 'Q'.$c->ac_label } $csv->fields;
+ok( @q_ac, "Found a layered witness" );
+
+my $t2 = Text::Tradition->new( input => 'Tabular',
+							   name => 'test2',
+							   string => $csvstr,
+							   sep_char => ',' );
+is( scalar $t2->collation->readings, $READINGS, "Reparsed CSV collation has all readings" );
+is( scalar $t2->collation->paths, $PATHS, "Reparsed CSV collation has all paths" );
+
+# Now do it with TSV
+my $tsvstr = $c->as_tsv();
+my $t3 = Text::Tradition->new( input => 'Tabular',
+							   name => 'test3',
+							   string => $tsvstr,
+							   sep_char => "\t" );
+is( scalar $t3->collation->readings, $READINGS, "Reparsed TSV collation has all readings" );
+is( scalar $t3->collation->paths, $PATHS, "Reparsed TSV collation has all paths" );
+
+my $table = $c->alignment_table;
+my $noaccsv = $c->as_csv({ noac => 1 });
+my @noaclines = split(/\n/, $noaccsv );
+ok( $csv->parse( $noaclines[0] ), "Successfully parsed first line of no-ac CSV" );
+is( scalar( $csv->fields ), $WITS, "CSV has correct number of witness columns" );
+is( $c->alignment_table, $table, "Request for CSV did not alter the alignment table" );
+
+my $safecsv = $c->as_csv({ safe_ac => 1});
+my @safelines = split(/\n/, $safecsv );
+ok( $csv->parse( $safelines[0] ), "Successfully parsed first line of safe CSV" );
+is( scalar( $csv->fields ), $WITS + $WITAC, "CSV has correct number of witness columns" );
+@q_ac = grep { $_ eq 'Q__L' } $csv->fields;
+ok( @q_ac, "Found a sanitized layered witness" );
+is( $c->alignment_table, $table, "Request for CSV did not alter the alignment table" );
 }
 
 

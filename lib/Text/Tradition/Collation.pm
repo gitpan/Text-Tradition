@@ -224,6 +224,18 @@ sub BUILD {
     	{ 'collation' => $self, 'is_end' => 1, 'init' => 1 } ) );
 }
 
+=head2 register_relationship_type( %relationship_definition )
+
+Add a relationship type definition to this collation. The argument can be either a
+hash or a hashref, defining the properties of the relationship. For relationship types 
+and their properties, see L<Text::Tradition::Collation::RelationshipType>.
+
+=head2 get_relationship_type( $relationship_name )
+
+Retrieve the RelationshipType object for the relationship with the given name.
+
+=cut
+
 sub register_relationship_type {
 	my $self = shift;
 	my %args = @_ == 1 ? %{$_[0]} : @_;
@@ -231,6 +243,12 @@ sub register_relationship_type {
 		throw( 'Relationship type ' . $args{name} . ' already registered' );
 	}
 	$self->relations->add_type( %args );
+}
+
+sub get_relationship_type {
+	my( $self, $name ) = @_;
+		return $self->relations->has_type( $name ) 
+			? $self->relations->type( $name ) : undef;
 }
 
 ### Reading construct/destruct functions
@@ -293,6 +311,7 @@ The first two arguments may be either readings or reading IDs.
 =begin testing
 
 use Text::Tradition;
+use TryCatch;
 
 my $cxfile = 't/data/Collatex-16.xml';
 my $t = Text::Tradition->new( 
@@ -325,12 +344,24 @@ $c->merge_readings( 'n9', 'n10' );
 ok( !$c->reading('n10'), "Reading n10 is gone" );
 is( $c->reading('n9')->text, 'rood', "Reading n9 has an unchanged word" );
 
-# Combine n21 and n21p0
+# Try to combine n21 and n21p0. This should break.
 my $remaining = $c->reading('n21');
 $remaining ||= $c->reading('n22');  # one of these should still exist
-$c->merge_readings( 'n21p0', $remaining, 1 );
-ok( !$c->reading('n21'), "Reading $remaining is gone" );
-is( $c->reading('n21p0')->text, 'unto', "Reading n21p0 merged correctly" );
+try {
+	$c->merge_readings( 'n21p0', $remaining, 1 );
+	ok( 0, "Bad reading merge changed the graph" );
+} catch( Text::Tradition::Error $e ) {
+	like( $e->message, qr/neither concatenated nor collated/, "Expected exception from bad concatenation" );
+} catch {
+	ok( 0, "Unexpected error on bad reading merge: $@" );
+}
+
+try {
+	$c->calculate_ranks();
+	ok( 1, "Graph is still evidently whole" );
+} catch( Text::Tradition::Error $e ) {
+	ok( 0, "Caught a rank exception: " . $e->message );
+}
 
 =end testing
 
@@ -351,6 +382,22 @@ sub merge_readings {
 				|| $del_obj eq $self->start || $del_obj eq $self->end );
 		throw( "Cannot combine text of meta readings" ) if $combine;
 	}
+	# We can only merge readings in a linear graph if:
+	# - they are contiguous with only one edge between them, OR
+	# - they are at equivalent ranks in the graph.
+	if( $self->linear ) {
+		my @delpred = $del_obj->predecessors;
+		my @keptsuc = $kept_obj->successors;
+		unless ( @delpred == 1 && $delpred[0] eq $kept_obj 
+			&& @keptsuc == 1 && $keptsuc[0] eq $del_obj ) {
+			my( $is_ok, $msg ) = $self->relations->relationship_valid( 
+				$kept_obj, $del_obj, 'collated' );
+			unless( $is_ok ) {
+				throw( "Readings $kept_obj and $del_obj can be neither concatenated nor collated" );
+			} 
+		}
+	}
+	
 	# We only need the IDs for adding paths to the graph, not the reading
 	# objects themselves.
 	my $kept = $kept_obj->id;
@@ -383,6 +430,96 @@ sub merge_readings {
 		$kept_obj->_combine( $del_obj, $joinstr );
 	}
 	$self->del_reading( $deleted );
+}
+
+=head2 merge_related( @relationship_types )
+
+Merge all readings linked with the relationship types given. If any of the selected type(s) is not a colocation, the graph will no longer be linear. The majority/plurality reading in each case will be the one kept. 
+
+WARNING: This operation cannot be undone.
+
+=cut
+
+=begin testing
+
+use Test::Warn;
+use Text::Tradition;
+use TryCatch;
+
+my $t;
+warnings_exist {
+	$t = Text::Tradition->new( 'input' => 'Self', 'file' => 't/data/legendfrag.xml' );
+} [qr/Cannot set relationship on a meta reading/],
+	"Got expected relationship drop warning on parse";
+
+my $c = $t->collation;
+
+my %rdg_ids;
+map { $rdg_ids{$_} = 1 } $c->readings;
+$c->merge_related( 'orthographic' );
+is( scalar( $c->readings ), keys( %rdg_ids ) - 9, 
+	"Successfully collapsed orthographic variation" );
+map { $rdg_ids{$_} = undef } qw/ r13.3 r11.4 r8.5 r8.2 r7.7 r7.5 r7.4 r7.3 r7.1 /;
+foreach my $rid ( keys %rdg_ids ) {
+	my $exp = $rdg_ids{$rid};
+	is( !$c->reading( $rid ), !$exp, "Reading $rid correctly " . 
+		( $exp ? "retained" : "removed" ) );
+}
+ok( $c->linear, "Graph is still linear" );
+try {
+	$c->calculate_ranks; # This should succeed
+	ok( 1, "Can still calculate ranks on the new graph" );
+} catch {
+	ok( 0, "Rank calculation on merged graph failed: $@" );
+}
+
+# Now add some transpositions
+$c->add_relationship( 'r8.4', 'r10.4', { type => 'transposition' } );
+$c->merge_related( 'transposition' );
+is( scalar( $c->readings ), keys( %rdg_ids ) - 10, 
+	"Transposed relationship is merged away" );
+ok( !$c->reading('r8.4'), "Correct transposed reading removed" );
+ok( !$c->linear, "Graph is no longer linear" );
+try {
+	$c->calculate_ranks; # This should fail
+	ok( 0, "Rank calculation happened on nonlinear graph?!" );
+} catch ( Text::Tradition::Error $e ) {
+	is( $e->message, 'Cannot calculate ranks on a non-linear graph', 
+		"Rank calculation on merged graph threw an error" );
+}
+
+=end testing
+
+=cut
+
+# TODO: there should be a way to display merged without affecting the underlying data!
+
+sub merge_related {
+	my $self = shift;
+	my %reltypehash;
+	map { $reltypehash{$_} = 1 } @_;
+	
+	# Set up the filter for finding related readings
+	my $filter = sub {
+		exists $reltypehash{$_[0]->type};
+	};
+	
+	# Go through all readings looking for related ones
+	foreach my $r ( $self->readings ) {
+		next unless $self->reading( "$r" ); # might have been deleted meanwhile
+		while( my @related = $self->related_readings( $r, $filter ) ) {
+			push( @related, $r );
+			@related = sort { 
+					scalar $b->witnesses <=> scalar $a->witnesses
+				} @related;
+			my $keep = shift @related;
+			foreach my $delr ( @related ) {
+				$self->linear( 0 )
+					unless( $self->get_relationship( $keep, $delr )->colocated );
+				$self->merge_readings( $keep, $delr );
+			}
+		}
+	}
 }
 
 =head2 compress_readings
@@ -463,7 +600,9 @@ Returns the newly-created reading.
 
 =begin testing
 
+use Test::More::UTF8;
 use Text::Tradition;
+use TryCatch;
 
 my $st = Text::Tradition->new( 'input' => 'Self', 'file' => 't/data/collatecorr.xml' );
 is( ref( $st ), 'Text::Tradition', "Got a tradition from test file" );
@@ -499,19 +638,51 @@ is( $sc->end->rank, 11, "The ranks shifted appropriately" );
 $sc->flatten_ranks();
 is( scalar( $sc->readings ), $numr - 3, "Now we are collated correctly" );
 
+# Check that we can't "duplicate" a reading with no wits or with all wits
+try {
+	my( $badr, @del_rdgs ) = $sc->duplicate_reading( 'n124' );
+	ok( 0, "Reading duplication without witnesses throws an error" );
+} catch( Text::Tradition::Error $e ) {
+	like( $e->message, qr/Must specify one or more witnesses/, 
+		"Reading duplication without witnesses throws the expected error" );
+} catch {
+	ok( 0, "Reading duplication without witnesses threw the wrong error" );
+}
+
+try {
+	my( $badr, @del_rdgs ) = $sc->duplicate_reading( 'n124', 'Ba96', 'Mü11475' );
+	ok( 0, "Reading duplication with all witnesses throws an error" );
+} catch( Text::Tradition::Error $e ) {
+	like( $e->message, qr/Cannot join all witnesses/, 
+		"Reading duplication with all witnesses throws the expected error" );
+} catch {
+	ok( 0, "Reading duplication with all witnesses threw the wrong error" );
+}
+
+try {
+	$sc->calculate_ranks();
+	ok( 1, "Graph is still evidently whole" );
+} catch( Text::Tradition::Error $e ) {
+	ok( 0, "Caught a rank exception: " . $e->message );
+}
+
 =end testing
 
 =cut
 
 sub duplicate_reading {
 	my( $self, $r, @wits ) = @_;
-	# Add the new reading, duplicating $r.
+	# Check that we are not doing anything unwise.
+	throw( "Must specify one or more witnesses for the duplicated reading" )
+		unless @wits;
 	unless( ref( $r ) eq 'Text::Tradition::Collation::Reading' ) {
 		$r = $self->reading( $r );
 	}
 	throw( "Cannot duplicate a meta-reading" )
 		if $r->is_meta;
-	
+	throw( "Cannot join all witnesses to the new reading" )
+		if scalar( @wits ) == scalar( $r->witnesses );
+
 	# Get all the reading attributes and duplicate them.	
 	my $rmeta = Text::Tradition::Collation::Reading->meta;
 	my %args;
@@ -867,7 +1038,8 @@ sub as_dot {
     foreach my $edge ( @edges ) {
     	# Do we need to output this edge?
     	if( $used{$edge->[0]} && $used{$edge->[1]} ) {
-    		my $label = $self->_path_display_label( $self->path_witnesses( $edge ) );
+    		my $label = $self->_path_display_label( $opts,
+    			$self->path_witnesses( $edge ) );
 			my $variables = { %edge_attrs, 'label' => $label };
 			
 			# Account for the rank gap if necessary
@@ -906,28 +1078,38 @@ sub as_dot {
     	if( $filter eq 'transposition' ) {
     		$filter =~ qr/^transposition$/;
     	}
+    	my %typecolors;
+    	my @types = sort( map { $_->name } $self->relations->types );
+    	if( exists $opts->{graphcolors} ) {
+    		foreach my $tdx ( 0 .. $#types ) {
+    			$typecolors{$types[$tdx]} = $opts->{graphcolors}->[$tdx];
+    		}
+    	} else {
+    		map { $typecolors{$_} = '#FFA14F' } @types;
+    	}
     	foreach my $redge ( $self->relationships ) {
     		if( $used{$redge->[0]} && $used{$redge->[1]} ) {
-    			if( $filter ne 'all' ) {
-    				my $rel = $self->get_relationship( $redge );
-    				next unless $rel->type =~ /$filter/;
-					my $variables = { 
-						arrowhead => 'none',
-						color => '#FFA14F',
-						constraint => 'false',
-						label => uc( substr( $rel->type, 0, 4 ) ), 
-						penwidth => '3',
-					};
-					$dot .= sprintf( "\t\"%s\" -> \"%s\" %s;\n",
-						$redge->[0], $redge->[1], _dot_attr_string( $variables ) );
+				my $rel = $self->get_relationship( $redge );
+				next unless $filter eq 'all' || $rel->type =~ /$filter/;
+				my $variables = { 
+					arrowhead => 'none',
+					color => $typecolors{$rel->type},
+					constraint => 'false',
+					penwidth => '3',
+				};
+				unless( exists $opts->{graphcolors} ) {
+					$variables->{label} = uc( substr( $rel->type, 0, 4 ) ), 
 				}
+				$dot .= sprintf( "\t\"%s\" -> \"%s\" %s;\n",
+					$redge->[0], $redge->[1], _dot_attr_string( $variables ) );
     		}
     	}
     }
     
     # Add substitute start and end edges if necessary
     foreach my $node ( keys %substart ) {
-    	my $witstr = $self->_path_display_label ( $self->path_witnesses( $substart{$node}, $node ) );
+    	my $witstr = $self->_path_display_label( $opts, 
+    		$self->path_witnesses( $substart{$node}, $node ) );
     	my $variables = { %edge_attrs, 'label' => $witstr };
     	my $nrdg = $self->reading( $node );
     	if( $nrdg->has_rank && $nrdg->rank > $startrank ) {
@@ -938,7 +1120,8 @@ sub as_dot {
         $dot .= "\t\"__SUBSTART__\" -> \"$node\" $varopts;\n";
 	}
     foreach my $node ( keys %subend ) {
-    	my $witstr = $self->_path_display_label ( $self->path_witnesses( $node, $subend{$node} ) );
+    	my $witstr = $self->_path_display_label( $opts,
+    		$self->path_witnesses( $node, $subend{$node} ) );
     	my $variables = { %edge_attrs, 'label' => $witstr };
         my $varopts = _dot_attr_string( $variables );
         $dot .= "\t\"$node\" -> \"__SUBEND__\" $varopts;\n";
@@ -1011,6 +1194,7 @@ sub path_witnesses {
 # witnesses only where the main witness is not also in the list.
 sub _path_display_label {
 	my $self = shift;
+	my $opts = shift;
 	my %wits;
 	map { $wits{$_} = 1 } @_;
 
@@ -1028,14 +1212,18 @@ sub _path_display_label {
 		}
 	}
 	
-	# See if we are in a majority situation.
-	my $maj = scalar( $self->tradition->witnesses ) * 0.6;
-	$maj = $maj > 5 ? $maj : 5;
-	if( scalar keys %wits > $maj ) {
-		unshift( @disp_ac, 'majority' );
-		return join( ', ', @disp_ac );
-	} else {
+	if( $opts->{'explicit_wits'} ) {
 		return join( ', ', sort keys %wits );
+	} else {
+		# See if we are in a majority situation.
+		my $maj = scalar( $self->tradition->witnesses ) * 0.6;
+		$maj = $maj > 5 ? $maj : 5;
+		if( scalar keys %wits > $maj ) {
+			unshift( @disp_ac, 'majority' );
+			return join( ', ', @disp_ac );
+		} else {
+			return join( ', ', sort keys %wits );
+		}
 	}
 }
 
@@ -1092,7 +1280,8 @@ is( scalar $c->relationships, 0, "Collation has all relationships" );
 # Add a few relationships
 $c->add_relationship( 'w123', 'w125', { 'type' => 'collated' } );
 $c->add_relationship( 'w193', 'w196', { 'type' => 'collated' } );
-$c->add_relationship( 'w257', 'w262', { 'type' => 'transposition' } );
+$c->add_relationship( 'w257', 'w262', { 'type' => 'transposition', 
+					  'is_significant' => 'yes' } );
 
 # Now write it to GraphML and parse it again.
 
@@ -1101,6 +1290,8 @@ my $st = Text::Tradition->new( 'input' => 'Self', 'string' => $graphml );
 is( scalar $st->collation->readings, $READINGS, "Reparsed collation has all readings" );
 is( scalar $st->collation->paths, $PATHS, "Reparsed collation has all paths" );
 is( scalar $st->collation->relationships, 3, "Reparsed collation has new relationships" );
+my $sigrel = $st->collation->get_relationship( 'w257', 'w262' );
+is( $sigrel->is_significant, 'yes', "Ternary attribute value was restored" );
 
 # Now add a stemma, write to GraphML, and look at the output.
 SKIP: {
@@ -1160,6 +1351,7 @@ sub as_graphml {
     	'ReadingID' => 'string',
     	'RelationshipType' => 'string',
     	'RelationshipScope' => 'string',
+    	'Ternary' => 'string',
     );
     
     # Add the data keys for the graph. Include an extra key 'version' for the
@@ -1381,24 +1573,110 @@ sub _add_graphml_data {
 Returns a CSV alignment table representation of the collation graph, one
 row per witness (or witness uncorrected.) 
 
+=head2 as_tsv
+
+Returns a tab-separated alignment table representation of the collation graph, 
+one row per witness (or witness uncorrected.) 
+
+=begin testing
+
+use Text::Tradition;
+use Text::CSV;
+
+my $READINGS = 311;
+my $PATHS = 361;
+my $WITS = 13;
+my $WITAC = 4;
+
+my $datafile = 't/data/florilegium_tei_ps.xml';
+my $tradition = Text::Tradition->new( 'input' => 'TEI',
+                                      'name' => 'test0',
+                                      'file' => $datafile,
+                                      'linear' => 1 );
+
+my $c = $tradition->collation;
+# Export the thing to CSV
+my $csvstr = $c->as_csv();
+# Count the columns
+my $csv = Text::CSV->new({ sep_char => ',', binary => 1 });
+my @lines = split(/\n/, $csvstr );
+ok( $csv->parse( $lines[0] ), "Successfully parsed first line of CSV" );
+is( scalar( $csv->fields ), $WITS + $WITAC, "CSV has correct number of witness columns" );
+my @q_ac = grep { $_ eq 'Q'.$c->ac_label } $csv->fields;
+ok( @q_ac, "Found a layered witness" );
+
+my $t2 = Text::Tradition->new( input => 'Tabular',
+							   name => 'test2',
+							   string => $csvstr,
+							   sep_char => ',' );
+is( scalar $t2->collation->readings, $READINGS, "Reparsed CSV collation has all readings" );
+is( scalar $t2->collation->paths, $PATHS, "Reparsed CSV collation has all paths" );
+
+# Now do it with TSV
+my $tsvstr = $c->as_tsv();
+my $t3 = Text::Tradition->new( input => 'Tabular',
+							   name => 'test3',
+							   string => $tsvstr,
+							   sep_char => "\t" );
+is( scalar $t3->collation->readings, $READINGS, "Reparsed TSV collation has all readings" );
+is( scalar $t3->collation->paths, $PATHS, "Reparsed TSV collation has all paths" );
+
+my $table = $c->alignment_table;
+my $noaccsv = $c->as_csv({ noac => 1 });
+my @noaclines = split(/\n/, $noaccsv );
+ok( $csv->parse( $noaclines[0] ), "Successfully parsed first line of no-ac CSV" );
+is( scalar( $csv->fields ), $WITS, "CSV has correct number of witness columns" );
+is( $c->alignment_table, $table, "Request for CSV did not alter the alignment table" );
+
+my $safecsv = $c->as_csv({ safe_ac => 1});
+my @safelines = split(/\n/, $safecsv );
+ok( $csv->parse( $safelines[0] ), "Successfully parsed first line of safe CSV" );
+is( scalar( $csv->fields ), $WITS + $WITAC, "CSV has correct number of witness columns" );
+@q_ac = grep { $_ eq 'Q__L' } $csv->fields;
+ok( @q_ac, "Found a sanitized layered witness" );
+is( $c->alignment_table, $table, "Request for CSV did not alter the alignment table" );
+
+=end testing
+
 =cut
 
-sub as_csv {
-    my( $self ) = @_;
-    my $table = $self->alignment_table;
-    my $csv = Text::CSV->new( { binary => 1, quote_null => 0 } );    
+sub _tabular {
+    my( $self, $opts ) = @_;
+    my $table = $self->alignment_table( $opts );
+	my $csv_options = { binary => 1, quote_null => 0 };
+	$csv_options->{'sep_char'} = $opts->{fieldsep};
+	if( $opts->{fieldsep} eq "\t" ) {
+		# If it is really tab separated, nothing is an escape char.
+		$csv_options->{'quote_char'} = undef;
+		$csv_options->{'escape_char'} = '';
+	}
+    my $csv = Text::CSV->new( $csv_options );    
     my @result;
     # Make the header row
     $csv->combine( map { $_->{'witness'} } @{$table->{'alignment'}} );
-	push( @result, decode_utf8( $csv->string ) );
+	push( @result, $csv->string );
     # Make the rest of the rows
     foreach my $idx ( 0 .. $table->{'length'} - 1 ) {
     	my @rowobjs = map { $_->{'tokens'}->[$idx] } @{$table->{'alignment'}};
     	my @row = map { $_ ? $_->{'t'}->text : $_ } @rowobjs;
         $csv->combine( @row );
-        push( @result, decode_utf8( $csv->string ) );
+        push( @result, $csv->string );
     }
     return join( "\n", @result );
+}
+
+sub as_csv {
+	my $self = shift;
+	my $opts = shift || {};
+	$opts->{fieldsep} = ',';
+	return $self->_tabular( $opts );
+}
+
+sub as_tsv {
+	my $self = shift;
+	my $opts = shift || {};
+	$opts->{fieldsep} = "\t";
+	return $self->_tabular( $opts );
 }
 
 =head2 alignment_table
@@ -1416,8 +1694,11 @@ format which looks like this:
 =cut
 
 sub alignment_table {
-    my( $self ) = @_;
-    return $self->cached_table if $self->has_cached_table;
+    my( $self, $opts ) = @_;
+    if( $self->has_cached_table ) {
+		return $self->cached_table
+			unless $opts->{noac} || $opts->{safe_ac};
+    }
     
     # Make sure we can do this
 	throw( "Need a linear graph in order to make an alignment table" )
@@ -1434,17 +1715,21 @@ sub alignment_table {
         my $witobj = { 'witness' => $wit->sigil, 'tokens' => \@row };
         $witobj->{'identifier'} = $wit->identifier if $wit->identifier;
         push( @{$table->{'alignment'}}, $witobj );
-        if( $wit->is_layered ) {
+        if( $wit->is_layered && !$opts->{noac} ) {
         	my @wit_ac_path = $self->reading_sequence( $self->start, $self->end, 
         		$wit->sigil.$self->ac_label );
             my @ac_row = _make_witness_row( \@wit_ac_path, \@all_pos );
-            my $witacobj = { 'witness' => $wit->sigil.$self->ac_label, 
+            my $witlabel = $opts->{safe_ac} 
+            	? $wit->sigil . '__L' : $wit->sigil.$self->ac_label;
+            my $witacobj = { 'witness' => $witlabel, 
             	'tokens' => \@ac_row };
             $witacobj->{'identifier'} = $wit->identifier if $wit->identifier;
 			push( @{$table->{'alignment'}}, $witacobj );
         }           
     }
-    $self->cached_table( $table );
+    unless( $opts->{noac} || $opts->{safe_ac} ) {
+	    $self->cached_table( $table );
+	}
     return $table;
 }
 
@@ -1745,6 +2030,8 @@ isnt( $c->alignment_table, $table, "Alignment table changed after colo relations
 sub calculate_ranks {
     my $self = shift;
     # Save the existing ranks, in case we need to invalidate the cached SVG.
+    throw( "Cannot calculate ranks on a non-linear graph" ) 
+    	unless $self->linear;
     my %existing_ranks;
     map { $existing_ranks{$_} = $_->rank } $self->readings;
 

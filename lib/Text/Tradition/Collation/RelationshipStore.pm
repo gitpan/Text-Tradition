@@ -1277,13 +1277,14 @@ sub _make_equivalence {
 	map { $self->set_equivalence( $_, $teq ) } @$sourcepool;
 	# Then merge the nodes in the equivalence graph.
 	foreach my $pred ( $self->equivalence_graph->predecessors( $seq ) ) {
+		next if $pred eq $teq; # don't add a self-loop on concatenation merge
 		$self->equivalence_graph->add_edge( $pred, $teq );
 	}
 	foreach my $succ ( $self->equivalence_graph->successors( $seq ) ) {
+		next if $succ eq $teq; # don't add a self-loop on concatenation merge
 		$self->equivalence_graph->add_edge( $teq, $succ );
 	}
 	$self->equivalence_graph->delete_vertex( $seq );
-	# TODO enable this after collation parsing is done
 	throw( "Graph got disconnected making $source / $target equivalence" )
 		if $self->_is_disconnected && $self->collation->tradition->_initialized;
 }
@@ -1611,7 +1612,7 @@ sub _add_graphml_data {
     $data_el->appendText( $value );
 }
 
-sub dump_segment {
+sub _dump_segment {
 	my( $self, $from, $to ) = @_;
 	open( DUMP, ">debug.svg" ) or die "Could not open debug.svg";
 	binmode DUMP, ':utf8';

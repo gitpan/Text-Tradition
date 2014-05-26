@@ -21,7 +21,7 @@
 #     NAME => q[Text::Tradition]
 #     NO_META => q[1]
 #     PREREQ_PM => { Spreadsheet::ParseExcel=>q[0], Text::TEI::Markup=>q[1.7], IPC::Run=>q[0], File::Which=>q[0], Graph=>q[0], Safe::Isa=>q[0], Text::CSV=>q[0], Moose::Util::TypeConstraints=>q[0], XML::LibXML::XPathContext=>q[0], Module::Load=>q[0], StackTrace::Auto=>q[0], Data::Dump=>q[0], Algorithm::Diff=>q[0], Moose=>q[0], XML::Easy::Syntax=>q[0], ExtUtils::MakeMaker=>q[6.59], Test::More::UTF8=>q[0], Moose::Util=>q[0], Spreadsheet::XLSX=>q[0], Test::Warn=>q[0], TryCatch=>q[0], Throwable::X=>q[0], XML::LibXML=>q[0], JSON=>q[0] }
-#     VERSION => q[1.2]
+#     VERSION => q[1.3]
 #     VERSION_FROM => q[lib/Text/Tradition.pm]
 #     dist => { PREOP=>q[$(PERL) -I. "-MModule::Install::Admin" -e "dist_preop(q($(DISTVNAME)))"] }
 #     realclean => { FILES=>q[MYMETA.yml] }
@@ -31,7 +31,7 @@
 
 # --- MakeMaker const_config section:
 
-# These definitions are from config.sh (via /opt/local/lib/perl5/5.16.1/darwin-thread-multi-2level/Config.pm).
+# These definitions are from config.sh (via /opt/local/lib/perl5/5.16.3/darwin-thread-multi-2level/Config.pm).
 # They may have been overridden via Makefile.PL or on the command line.
 AR = ar
 CC = /usr/bin/clang
@@ -40,21 +40,21 @@ CCDLFLAGS =
 DLEXT = bundle
 DLSRC = dl_dlopen.xs
 EXE_EXT = 
-FULL_AR = /usr/bin/ar
-LD = env MACOSX_DEPLOYMENT_TARGET=10.8 /usr/bin/clang
-LDDLFLAGS = -L/opt/local/lib  -bundle -undefined dynamic_lookup -fstack-protector
-LDFLAGS = -L/opt/local/lib  -fstack-protector
+FULL_AR = /opt/local/bin/ar
+LD = env MACOSX_DEPLOYMENT_TARGET=10.3 /usr/bin/clang
+LDDLFLAGS = -L/opt/local/lib -Wl,-headerpad_max_install_names  -bundle -undefined dynamic_lookup -fstack-protector
+LDFLAGS = -L/opt/local/lib -Wl,-headerpad_max_install_names  -fstack-protector
 LIBC = 
 LIB_EXT = .a
 OBJ_EXT = .o
 OSNAME = darwin
-OSVERS = 12.3.0
+OSVERS = 13.1.0
 RANLIB = ranlib
-SITELIBEXP = /opt/local/lib/perl5/site_perl/5.16.1
-SITEARCHEXP = /opt/local/lib/perl5/site_perl/5.16.1/darwin-thread-multi-2level
+SITELIBEXP = /opt/local/lib/perl5/site_perl/5.16.3
+SITEARCHEXP = /opt/local/lib/perl5/site_perl/5.16.3/darwin-thread-multi-2level
 SO = dylib
-VENDORARCHEXP = /opt/local/lib/perl5/vendor_perl/5.16.1/darwin-thread-multi-2level
-VENDORLIBEXP = /opt/local/lib/perl5/vendor_perl/5.16.1
+VENDORARCHEXP = /opt/local/lib/perl5/vendor_perl/5.16.3/darwin-thread-multi-2level
+VENDORLIBEXP = /opt/local/lib/perl5/vendor_perl/5.16.3
 
 
 # --- MakeMaker constants section:
@@ -63,11 +63,11 @@ DIRFILESEP = /
 DFSEP = $(DIRFILESEP)
 NAME = Text::Tradition
 NAME_SYM = Text_Tradition
-VERSION = 1.2
+VERSION = 1.3
 VERSION_MACRO = VERSION
-VERSION_SYM = 1_2
+VERSION_SYM = 1_3
 DEFINE_VERSION = -D$(VERSION_MACRO)=\"$(VERSION)\"
-XS_VERSION = 1.2
+XS_VERSION = 1.3
 XS_VERSION_MACRO = XS_VERSION
 XS_DEFINE_VERSION = -D$(XS_VERSION_MACRO)=\"$(XS_VERSION)\"
 INST_ARCHLIB = blib/arch
@@ -84,17 +84,17 @@ PREFIX = $(SITEPREFIX)
 PERLPREFIX = /opt/local
 SITEPREFIX = /opt/local
 VENDORPREFIX = /opt/local
-INSTALLPRIVLIB = /opt/local/lib/perl5/5.16.1
+INSTALLPRIVLIB = /opt/local/lib/perl5/5.16.3
 DESTINSTALLPRIVLIB = $(DESTDIR)$(INSTALLPRIVLIB)
-INSTALLSITELIB = /opt/local/lib/perl5/site_perl/5.16.1
+INSTALLSITELIB = /opt/local/lib/perl5/site_perl/5.16.3
 DESTINSTALLSITELIB = $(DESTDIR)$(INSTALLSITELIB)
-INSTALLVENDORLIB = /opt/local/lib/perl5/vendor_perl/5.16.1
+INSTALLVENDORLIB = /opt/local/lib/perl5/vendor_perl/5.16.3
 DESTINSTALLVENDORLIB = $(DESTDIR)$(INSTALLVENDORLIB)
-INSTALLARCHLIB = /opt/local/lib/perl5/5.16.1/darwin-thread-multi-2level
+INSTALLARCHLIB = /opt/local/lib/perl5/5.16.3/darwin-thread-multi-2level
 DESTINSTALLARCHLIB = $(DESTDIR)$(INSTALLARCHLIB)
-INSTALLSITEARCH = /opt/local/lib/perl5/site_perl/5.16.1/darwin-thread-multi-2level
+INSTALLSITEARCH = /opt/local/lib/perl5/site_perl/5.16.3/darwin-thread-multi-2level
 DESTINSTALLSITEARCH = $(DESTDIR)$(INSTALLSITEARCH)
-INSTALLVENDORARCH = /opt/local/lib/perl5/vendor_perl/5.16.1/darwin-thread-multi-2level
+INSTALLVENDORARCH = /opt/local/lib/perl5/vendor_perl/5.16.3/darwin-thread-multi-2level
 DESTINSTALLVENDORARCH = $(DESTDIR)$(INSTALLVENDORARCH)
 INSTALLBIN = /opt/local/bin
 DESTINSTALLBIN = $(DESTDIR)$(INSTALLBIN)
@@ -121,13 +121,13 @@ DESTINSTALLSITEMAN3DIR = $(DESTDIR)$(INSTALLSITEMAN3DIR)
 INSTALLVENDORMAN3DIR = /opt/local/share/perl5.16/man/man3
 DESTINSTALLVENDORMAN3DIR = $(DESTDIR)$(INSTALLVENDORMAN3DIR)
 PERL_LIB =
-PERL_ARCHLIB = /opt/local/lib/perl5/5.16.1/darwin-thread-multi-2level
+PERL_ARCHLIB = /opt/local/lib/perl5/5.16.3/darwin-thread-multi-2level
 LIBPERL_A = libperl.a
 FIRST_MAKEFILE = Makefile
 MAKEFILE_OLD = Makefile.old
 MAKE_APERL_FILE = Makefile.aperl
 PERLMAINCC = $(CC)
-PERL_INC = /opt/local/lib/perl5/5.16.1/darwin-thread-multi-2level/CORE
+PERL_INC = /opt/local/lib/perl5/5.16.3/darwin-thread-multi-2level/CORE
 PERL = /opt/local/bin/perl5.16 "-Iinc"
 FULLPERL = /opt/local/bin/perl5.16 "-Iinc"
 ABSPERL = $(PERL)
@@ -142,7 +142,7 @@ PERM_DIR = 755
 PERM_RW = 644
 PERM_RWX = 755
 
-MAKEMAKER   = /opt/local/lib/perl5/5.16.1/ExtUtils/MakeMaker.pm
+MAKEMAKER   = /opt/local/lib/perl5/5.16.3/ExtUtils/MakeMaker.pm
 MM_VERSION  = 6.6302
 MM_REVISION = 66302
 
@@ -173,6 +173,7 @@ MAN3PODS = lib/Text/Tradition.pm \
 	lib/Text/Tradition/Collation/Relationship.pm \
 	lib/Text/Tradition/Collation/RelationshipStore.pm \
 	lib/Text/Tradition/Collation/RelationshipType.pm \
+	lib/Text/Tradition/Datatypes.pm \
 	lib/Text/Tradition/Error.pm \
 	lib/Text/Tradition/Parser/BaseText.pm \
 	lib/Text/Tradition/Parser/CTE.pm \
@@ -214,6 +215,7 @@ TO_INST_PM = lib/Text/Tradition.pm \
 	lib/Text/Tradition/Collation/Relationship.pm \
 	lib/Text/Tradition/Collation/RelationshipStore.pm \
 	lib/Text/Tradition/Collation/RelationshipType.pm \
+	lib/Text/Tradition/Datatypes.pm \
 	lib/Text/Tradition/Error.pm \
 	lib/Text/Tradition/Parser/BaseText.pm \
 	lib/Text/Tradition/Parser/CTE.pm \
@@ -246,6 +248,8 @@ PM_TO_BLIB = lib/Text/Tradition/Error.pm \
 	blib/lib/Text/Tradition/Parser/GraphML.pm \
 	lib/Text/Tradition/Parser/JSON.pm \
 	blib/lib/Text/Tradition/Parser/JSON.pm \
+	lib/Text/Tradition/Datatypes.pm \
+	blib/lib/Text/Tradition/Datatypes.pm \
 	lib/Text/Tradition/Parser/Util.pm \
 	blib/lib/Text/Tradition/Parser/Util.pm \
 	lib/Text/Tradition/Collation/RelationshipStore.pm \
@@ -336,7 +340,7 @@ RCS_LABEL = rcs -Nv$(VERSION_SYM): -q
 DIST_CP = best
 DIST_DEFAULT = tardist
 DISTNAME = Text-Tradition
-DISTVNAME = Text-Tradition-1.2
+DISTVNAME = Text-Tradition-1.3
 
 
 # --- MakeMaker macro section:
@@ -497,14 +501,15 @@ manifypods : pure_all  \
 	lib/Text/Tradition/Parser/KUL.pm \
 	lib/Text/Tradition/Parser/GraphML.pm \
 	lib/Text/Tradition/Parser/JSON.pm \
+	lib/Text/Tradition/Datatypes.pm \
 	lib/Text/Tradition/Parser/Util.pm \
 	lib/Text/Tradition/Collation/RelationshipStore.pm \
 	lib/Text/Tradition/Collation/RelationshipType.pm \
 	lib/Text/Tradition/Parser/CollateText.pm \
-	lib/Text/Tradition/Parser/TEI.pm \
-	lib/Text/Tradition/Collation/Relationship.pm \
 	lib/Text/Tradition/Collation.pm \
 	lib/Text/Tradition/Parser/CTE.pm \
+	lib/Text/Tradition/Parser/TEI.pm \
+	lib/Text/Tradition/Collation/Relationship.pm \
 	lib/Text/Tradition/Parser/Tabular.pm \
 	lib/Text/Tradition/Witness.pm \
 	lib/Text/Tradition/Parser/CollateX.pm
@@ -517,14 +522,15 @@ manifypods : pure_all  \
 	  lib/Text/Tradition/Parser/KUL.pm $(INST_MAN3DIR)/Text::Tradition::Parser::KUL.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/GraphML.pm $(INST_MAN3DIR)/Text::Tradition::Parser::GraphML.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/JSON.pm $(INST_MAN3DIR)/Text::Tradition::Parser::JSON.$(MAN3EXT) \
+	  lib/Text/Tradition/Datatypes.pm $(INST_MAN3DIR)/Text::Tradition::Datatypes.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/Util.pm $(INST_MAN3DIR)/Text::Tradition::Parser::Util.$(MAN3EXT) \
 	  lib/Text/Tradition/Collation/RelationshipStore.pm $(INST_MAN3DIR)/Text::Tradition::Collation::RelationshipStore.$(MAN3EXT) \
 	  lib/Text/Tradition/Collation/RelationshipType.pm $(INST_MAN3DIR)/Text::Tradition::Collation::RelationshipType.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/CollateText.pm $(INST_MAN3DIR)/Text::Tradition::Parser::CollateText.$(MAN3EXT) \
-	  lib/Text/Tradition/Parser/TEI.pm $(INST_MAN3DIR)/Text::Tradition::Parser::TEI.$(MAN3EXT) \
-	  lib/Text/Tradition/Collation/Relationship.pm $(INST_MAN3DIR)/Text::Tradition::Collation::Relationship.$(MAN3EXT) \
 	  lib/Text/Tradition/Collation.pm $(INST_MAN3DIR)/Text::Tradition::Collation.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/CTE.pm $(INST_MAN3DIR)/Text::Tradition::Parser::CTE.$(MAN3EXT) \
+	  lib/Text/Tradition/Parser/TEI.pm $(INST_MAN3DIR)/Text::Tradition::Parser::TEI.$(MAN3EXT) \
+	  lib/Text/Tradition/Collation/Relationship.pm $(INST_MAN3DIR)/Text::Tradition::Collation::Relationship.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/Tabular.pm $(INST_MAN3DIR)/Text::Tradition::Parser::Tabular.$(MAN3EXT) \
 	  lib/Text/Tradition/Witness.pm $(INST_MAN3DIR)/Text::Tradition::Witness.$(MAN3EXT) \
 	  lib/Text/Tradition/Parser/CollateX.pm $(INST_MAN3DIR)/Text::Tradition::Parser::CollateX.$(MAN3EXT) 
@@ -929,6 +935,7 @@ pm_to_blib : $(FIRST_MAKEFILE) $(TO_INST_PM)
 	  lib/Text/Tradition/Collation/Data.pm blib/lib/Text/Tradition/Collation/Data.pm \
 	  lib/Text/Tradition/Parser/GraphML.pm blib/lib/Text/Tradition/Parser/GraphML.pm \
 	  lib/Text/Tradition/Parser/JSON.pm blib/lib/Text/Tradition/Parser/JSON.pm \
+	  lib/Text/Tradition/Datatypes.pm blib/lib/Text/Tradition/Datatypes.pm \
 	  lib/Text/Tradition/Parser/Util.pm blib/lib/Text/Tradition/Parser/Util.pm \
 	  lib/Text/Tradition/Collation/RelationshipStore.pm blib/lib/Text/Tradition/Collation/RelationshipStore.pm \
 	  lib/Text/Tradition/Collation/RelationshipType.pm blib/lib/Text/Tradition/Collation/RelationshipType.pm \

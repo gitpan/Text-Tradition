@@ -1,6 +1,4 @@
 CHANGES
-data
-db/traditions.db
 doc/graph_format.txt
 inc/Module/Install.pm
 inc/Module/Install/Base.pm
@@ -17,6 +15,7 @@ lib/Text/Tradition/Collation/Reading.pm
 lib/Text/Tradition/Collation/Relationship.pm
 lib/Text/Tradition/Collation/RelationshipStore.pm
 lib/Text/Tradition/Collation/RelationshipType.pm
+lib/Text/Tradition/Datatypes.pm
 lib/Text/Tradition/Error.pm
 lib/Text/Tradition/Parser/CollateX.pm
 lib/Text/Tradition/Parser/CTE.pm
