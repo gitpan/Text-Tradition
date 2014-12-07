@@ -21,7 +21,7 @@
 #     NAME => q[Text::Tradition]
 #     NO_META => q[1]
 #     PREREQ_PM => { Spreadsheet::ParseExcel=>q[0], Text::TEI::Markup=>q[1.7], IPC::Run=>q[0], File::Which=>q[0], Graph=>q[0], Safe::Isa=>q[0], Text::CSV=>q[0], Moose::Util::TypeConstraints=>q[0], XML::LibXML::XPathContext=>q[0], Module::Load=>q[0], StackTrace::Auto=>q[0], Data::Dump=>q[0], Algorithm::Diff=>q[0], Moose=>q[0], XML::Easy::Syntax=>q[0], ExtUtils::MakeMaker=>q[6.59], Test::More::UTF8=>q[0], Moose::Util=>q[0], Spreadsheet::XLSX=>q[0], Test::Warn=>q[0], TryCatch=>q[0], Throwable::X=>q[0], XML::LibXML=>q[0], JSON=>q[0] }
-#     VERSION => q[2.0.0]
+#     VERSION => q[2.0.1]
 #     VERSION_FROM => q[lib/Text/Tradition.pm]
 #     dist => { PREOP=>q[$(PERL) -I. "-MModule::Install::Admin" -e "dist_preop(q($(DISTVNAME)))"] }
 #     realclean => { FILES=>q[MYMETA.yml] }
@@ -63,11 +63,11 @@ DIRFILESEP = /
 DFSEP = $(DIRFILESEP)
 NAME = Text::Tradition
 NAME_SYM = Text_Tradition
-VERSION = 2.0.0
+VERSION = 2.0.1
 VERSION_MACRO = VERSION
-VERSION_SYM = 2_0_0
+VERSION_SYM = 2_0_1
 DEFINE_VERSION = -D$(VERSION_MACRO)=\"$(VERSION)\"
-XS_VERSION = 2.0.0
+XS_VERSION = 2.0.1
 XS_VERSION_MACRO = XS_VERSION
 XS_DEFINE_VERSION = -D$(XS_VERSION_MACRO)=\"$(XS_VERSION)\"
 INST_ARCHLIB = blib/arch
@@ -340,7 +340,7 @@ RCS_LABEL = rcs -Nv$(VERSION_SYM): -q
 DIST_CP = best
 DIST_DEFAULT = tardist
 DISTNAME = Text-Tradition
-DISTVNAME = Text-Tradition-2.0.0
+DISTVNAME = Text-Tradition-2.0.1
 
 
 # --- MakeMaker macro section:

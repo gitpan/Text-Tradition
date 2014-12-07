@@ -71,5 +71,4 @@ t/text_tradition_parser_self.t
 t/text_tradition_parser_tabular.t
 t/text_tradition_parser_tei.t
 t/text_tradition_witness.t
-thischange.txt
 TODO
