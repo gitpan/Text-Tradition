@@ -42,4 +42,4 @@ requires:
   XML::LibXML: 0
   XML::LibXML::XPathContext: 0
   perl: 5.012
-version: 1.3
+version: v2.0.0

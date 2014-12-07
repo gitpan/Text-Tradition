@@ -6,6 +6,7 @@ use File::Temp;
 use File::Which;
 use Graph;
 use IPC::Run qw( run binary );
+use JSON qw/ to_json /;
 use Text::CSV;
 use Text::Tradition::Collation::Data;
 use Text::Tradition::Collation::Reading;
@@ -30,6 +31,7 @@ has _data => (
 		ac_label
 		has_cached_table
 		relationships
+		relationship_types
 		related_readings
 		get_relationship
 		del_relationship
@@ -59,6 +61,8 @@ has 'tradition' => (
     writer => '_set_tradition',
     weak_ref => 1,
     );
+
+=encoding utf8
 
 =head1 NAME
 
@@ -453,6 +457,8 @@ warnings_exist {
 	"Got expected relationship drop warning on parse";
 
 my $c = $t->collation;
+# Force the transitive propagation of all existing relationships.
+$c->relations->propagate_all_relationships();
 
 my %rdg_ids;
 map { $rdg_ids{$_} = 1 } $c->readings;
@@ -532,10 +538,50 @@ readings must also not be marked as nonsense or bad grammar.
 
 WARNING: This operation cannot be undone.
 
+=begin testing
+
+use Text::Tradition;
+
+my $t = Text::Tradition->new( input => 'CollateX', file => 't/data/CollateX-16.xml' );
+my $c = $t->collation;
+my $n = scalar $c->readings;
+$c->compress_readings();
+is( scalar $c->readings, $n - 6, "Compressing readings seems to work" );
+
+# Now put in a join-word and make sure the thing still works.
+my $t2 = Text::Tradition->new( input => 'CollateX', file => 't/data/CollateX-16.xml' );
+my $c2 = $t2->collation;
+# Split n21 ('unto') for testing purposes
+my $new_r = $c2->add_reading( { 'id' => 'n21p0', 'text' => 'un', 'join_next' => 1 } );
+my $old_r = $c2->reading( 'n21' );
+$old_r->alter_text( 'to' );
+$c2->del_path( 'n20', 'n21', 'A' );
+$c2->add_path( 'n20', 'n21p0', 'A' );
+$c2->add_path( 'n21p0', 'n21', 'A' );
+$c2->calculate_ranks();
+is( scalar $c2->readings, $n + 1, "We have our extra test reading" );
+$c2->compress_readings();
+is( scalar $c2->readings, $n - 6, "Compressing readings also works with join_next" );
+is( $c2->reading( 'n21p0' )->text, 'unto', "The joined word has no space" );
+
+
+=end testing
+
 =cut
 
 sub compress_readings {
 	my $self = shift;
+	# Sanity check: first save the original text of each witness.
+	my %origtext;
+	foreach my $wit ( $self->tradition->witnesses ) {
+		$origtext{$wit->sigil} = $self->path_text( $wit->sigil );
+		if( $wit->is_layered ) {
+			my $acsig = $wit->sigil . $self->ac_label;
+			$origtext{$acsig} = $self->path_text( $acsig );
+		}
+	}
+	
+	# Now do the deed.
 	# Anywhere in the graph that there is a reading that joins only to a single
 	# successor, and neither of these have any relationships, just join the two
 	# readings.
@@ -553,17 +599,17 @@ sub compress_readings {
 			$self->merge_readings( $rdg, $next, 1 );
 		}
 	}
-	# Make sure we haven't screwed anything up
+	
+	# Finally, make sure we haven't screwed anything up.
 	foreach my $wit ( $self->tradition->witnesses ) {
 		my $pathtext = $self->path_text( $wit->sigil );
-		my $origtext = join( ' ', @{$wit->text} );
 		throw( "Text differs for witness " . $wit->sigil )
-			unless $pathtext eq $origtext;
+			unless $pathtext eq $origtext{$wit->sigil};
 		if( $wit->is_layered ) {
-			$pathtext = $self->path_text( $wit->sigil.$self->ac_label );
-			$origtext = join( ' ', @{$wit->layertext} );
-			throw( "Ante-corr text differs for witness " . $wit->sigil )
-				unless $pathtext eq $origtext;
+			my $acsig = $wit->sigil . $self->ac_label;
+			$pathtext = $self->path_text( $acsig );
+			throw( "Layered text differs for witness " . $wit->sigil )
+				unless $pathtext eq $origtext{$acsig};
 		}
 	}
 
@@ -1021,8 +1067,10 @@ sub as_dot {
         next if $reading->id eq $reading->text;
         my $rattrs;
         my $label = $reading->text;
-        $label .= '-' if $reading->join_next;
-        $label = "-$label" if $reading->join_prior;
+        unless( $label =~ /^[[:punct:]]+$/ ) {
+	        $label .= '-' if $reading->join_next;
+    	    $label = "-$label" if $reading->join_prior;
+    	}
         $label =~ s/\"/\\\"/g;
 		$rattrs->{'label'} = $label;
 		$rattrs->{'id'} = $reading->id;
@@ -1030,9 +1078,7 @@ sub as_dot {
         $dot .= sprintf( "\t\"%s\" %s;\n", $reading->id, _dot_attr_string( $rattrs ) );
     }
     
-	# Add the real edges. Need to weight one edge per rank jump, in a
-	# continuous line.
-	# my $weighted = $self->_add_edge_weights;
+	# Add the real edges. 
     my @edges = $self->paths;
 	my( %substart, %subend );
     foreach my $edge ( @edges ) {
@@ -1051,13 +1097,6 @@ sub as_dot {
 				$variables->{'minlen'} = $rank1 - $rank0;
 			}
 			
-			# Add the calculated edge weights
-			# if( exists $weighted->{$edge->[0]} 
-			# 	&& $weighted->{$edge->[0]} eq $edge->[1] ) {
-			# 	# $variables->{'color'} = 'red';
-			# 	$variables->{'weight'} = 3.0;
-			# }
-
 			# EXPERIMENTAL: make edge width reflect no. of witnesses
 			my $extrawidth = scalar( $self->path_witnesses( $edge ) ) * 0.2;
 			$variables->{'penwidth'} = $extrawidth + 0.8; # gives 1 for a single wit
@@ -1146,32 +1185,6 @@ sub _dot_attr_string {
 	return( '[ ' . join( ', ', @attrs ) . ' ]' );
 }
 
-sub _add_edge_weights {
-	my $self = shift;
-	# Walk the graph from START to END, choosing the successor node with
-	# the largest number of witness paths each time.
-	my $weighted = {};
-	my $curr = $self->start->id;
-	my $ranked = $self->end->has_rank;
-	while( $curr ne $self->end->id ) {
-		my $rank = $ranked ? $self->reading( $curr )->rank : 0;
-		my @succ = sort { $self->path_witnesses( $curr, $a )
-							<=> $self->path_witnesses( $curr, $b ) } 
-			$self->sequence->successors( $curr );
-		my $next = pop @succ;
-		my $nextrank = $ranked ? $self->reading( $next )->rank : 0;
-		# Try to avoid lacunae in the weighted path.
-		while( @succ && 
-			   ( $self->reading( $next )->is_lacuna ||
-			   	 $nextrank - $rank > 1 ) ){
-			$next = pop @succ;
-		}
-		$weighted->{$curr} = $next;
-		$curr = $next;
-	}
-	return $weighted;	
-}
-
 =head2 path_witnesses( $edge )
 
 Returns the list of sigils whose witnesses are associated with the given edge.
@@ -1227,25 +1240,128 @@ sub _path_display_label {
 	}
 }
 
-=head2 readings_at_rank( $rank )
+=head2 as_adjacency_list
 
-Returns a list of readings at a given rank, taken from the alignment table.
+Returns a JSON structure that represents the collation sequence graph.
+
+=begin testing
+
+use JSON qw/ from_json /;
+use Text::Tradition;
+
+my $t = Text::Tradition->new( 
+	'input' => 'Self',
+	'file' => 't/data/florilegium_graphml.xml' );
+my $c = $t->collation;
+	
+# Make a connection so we can test rank preservation
+$c->add_relationship( 'w91', 'w92', { type => 'grammatical' } );
+
+# Create an adjacency list of the whole thing; test the output.
+my $adj_whole = from_json( $c->as_adjacency_list() );
+is( scalar @$adj_whole, scalar $c->readings(), 
+	"Same number of nodes in graph and adjacency list" );
+my @adj_whole_edges;
+map { push( @adj_whole_edges, @{$_->{adjacent}} ) } @$adj_whole;
+is( scalar @adj_whole_edges, scalar $c->sequence->edges,
+	"Same number of edges in graph and adjacency list" );
+# Find the reading whose rank should be preserved
+my( $test_rdg ) = grep { $_->{id} eq 'w89' } @$adj_whole;
+my( $test_edge ) = grep { $_->{id} eq 'w92' } @{$test_rdg->{adjacent}};
+is( $test_edge->{minlen}, 2, "Rank of test reading is preserved" );
+
+# Now create an adjacency list of just a portion. w76 to w122
+my $adj_part = from_json( $c->as_adjacency_list(
+	{ from => $c->reading('w76')->rank,
+	  to   => $c->reading('w122')->rank }));
+is( scalar @$adj_part, 48, "Correct number of nodes in partial graph" );
+my @adj_part_edges;
+map { push( @adj_part_edges, @{$_->{adjacent}} ) } @$adj_part;
+is( scalar @adj_part_edges, 58,
+	"Same number of edges in partial graph and adjacency list" );
+# Check for consistency
+my %part_nodes;
+map { $part_nodes{$_->{id}} = 1 } @$adj_part;
+foreach my $edge ( @adj_part_edges ) {
+	my $testid = $edge->{id};
+	ok( $part_nodes{$testid}, "ID $testid referenced in edge is given as node" );
+}
+
+=end testing
 
 =cut
 
-sub readings_at_rank {
-	my( $self, $rank ) = @_;
-	my $table = $self->alignment_table;
-	# Table rank is real rank - 1.
-	my @elements = map { $_->{'tokens'}->[$rank-1] } @{$table->{'alignment'}};
-	my %readings;
-	foreach my $e ( @elements ) {
-		next unless ref( $e ) eq 'HASH';
-		next unless exists $e->{'t'};
-		$readings{$e->{'t'}->id} = $e->{'t'};
+sub as_adjacency_list {
+	my( $self, $opts ) = @_;
+	# Make a structure that contains all the nodes, the nodes they point to,
+	# and the attributes of the edges that connect them. 
+	# [ { id: 'n0', label: 'Gallia', adjacent: [ 
+	#		{ id: 'n1', label: 'P Q' } , 
+	# 		{ id: 'n2', label: 'R S', minlen: 2 } ] },
+	#   { id: 'n1', label: 'est', adjacent: [ ... ] },
+	#   ... ]
+	my $startrank = $opts->{'from'} || 0;
+	my $endrank = $opts->{'to'} || $self->end->rank;
+	
+    $self->calculate_ranks() 
+    	unless( $self->_graphcalc_done || $opts->{'nocalc'} || !$self->linear );
+	my $list = [];
+	foreach my $rdg ( $self->readings ) {
+		my @successors;
+		my $phony = '';
+		# Figure out what the node's successors should be.
+		if( $rdg eq $self->start && $startrank > 0 ) {
+			# Connect the start node with all the nodes at startrank.
+			# Lacunas should be included only if the node really has that rank.
+			@successors = $self->readings_at_rank( $startrank, 1 );
+			$phony = 'start';
+		} elsif( $rdg->rank < $startrank
+				 || $rdg->rank > $endrank && $rdg ne $self->end ) {
+			next;
+		} else {
+			@successors = $rdg->successors;
+		}
+		# Make sure that the end node is at the end of the successors
+		# list if it is needed.
+		if( grep { $_ eq $self->end } @successors ) {
+			my @ts = grep { $_ ne $self->end } @successors;
+			@successors = ( @ts, $self->end );
+		} elsif ( grep { $_->rank > $endrank } @successors ) {
+			push( @successors, $self->end );
+		}
+		
+		my $listitem = { id => $rdg->id, label => $rdg->text };
+		my $adjacent = [];
+		my @endwits;
+		foreach my $succ ( @successors ) {
+			my @edgewits;
+			if( $phony eq 'start' ) {
+				@edgewits = $succ->witnesses;
+			} elsif( $self->sequence->has_edge( $rdg->id, $succ->id ) ) {
+				@edgewits = $self->path_witnesses( $rdg->id, $succ->id );
+			}
+			
+			if( $succ eq $self->end ) {
+				@edgewits = @endwits;
+			} elsif( $succ->rank > $endrank ) {
+				# These witnesses will point to 'end' instead, not to the
+				# actual successor.
+				push( @endwits, @edgewits );
+				next;
+			}
+			my $edgelabel = $self->_path_display_label( $opts, @edgewits );
+			my $edgedef = { id => $succ->id, label => $edgelabel };
+			my $rankoffset = $succ->rank - $rdg->rank;
+			if( $rankoffset > 1 and $succ ne $self->end ) {
+				$edgedef->{minlen} = $rankoffset;
+			}
+			push( @$adjacent, $edgedef );
+		}
+		$listitem->{adjacent} = $adjacent;
+		push( @$list, $listitem );
 	}
-	return values %readings;
-}		
+	return to_json( $list );
+}
 
 =head2 as_graphml
 
@@ -1636,6 +1752,27 @@ is( scalar( $csv->fields ), $WITS + $WITAC, "CSV has correct number of witness c
 ok( @q_ac, "Found a sanitized layered witness" );
 is( $c->alignment_table, $table, "Request for CSV did not alter the alignment table" );
 
+# Test relationship collapse
+$c->add_relationship( $c->readings_at_rank( 37 ), { type => 'spelling' } );
+$c->add_relationship( $c->readings_at_rank( 60 ), { type => 'spelling' } );
+
+my $mergedtsv = $c->as_tsv({mergetypes => [ 'spelling', 'orthographic' ] });
+my $t4 = Text::Tradition->new( input => 'Tabular',
+							   name => 'test4',
+							   string => $mergedtsv,
+							   sep_char => "\t" );
+is( scalar $t4->collation->readings, $READINGS - 2, "Reparsed TSV merge collation has fewer readings" );
+is( scalar $t4->collation->paths, $PATHS - 4, "Reparsed TSV merge collation has fewer paths" );
+
+# Test non-ASCII sigla
+my $t5 = Text::Tradition->new( input => 'Tabular',
+							   name => 'nonascii',
+							   file => 't/data/armexample.xlsx',
+							   excel => 'xlsx' );
+my $awittsv = $t5->collation->as_tsv({ noac => 1, ascii => 1 });
+my @awitlines = split( /\n/, $awittsv );
+like( $awitlines[0], qr/_A_5315622/, "Found ASCII sigil variant in TSV" );
+
 =end testing
 
 =cut
@@ -1652,13 +1789,46 @@ sub _tabular {
 	}
     my $csv = Text::CSV->new( $csv_options );    
     my @result;
+    
     # Make the header row
-    $csv->combine( map { $_->{'witness'} } @{$table->{'alignment'}} );
+    my @witnesses = map { $_->{'witness'} } @{$table->{'alignment'}};
+    if( $opts->{ascii} ) {
+    	# TODO think of a fix for this
+    	throw( "Cannot currently produce ASCII sigla with witness layers" )
+    		unless $opts->{noac};
+    	my @awits = map { $self->tradition->witness( $_ )->ascii_sigil } @witnesses;
+    	@witnesses = @awits;
+    }    
+    $csv->combine( @witnesses );
 	push( @result, $csv->string );
+	
     # Make the rest of the rows
     foreach my $idx ( 0 .. $table->{'length'} - 1 ) {
     	my @rowobjs = map { $_->{'tokens'}->[$idx] } @{$table->{'alignment'}};
     	my @row = map { $_ ? $_->{'t'}->text : $_ } @rowobjs;
+    	# Quick and dirty collapse of requested relationship types
+    	if( ref( $opts->{mergetypes} ) eq 'ARRAY' ) {
+    		# Now substitute the reading in the relevant index of @row
+    		# for its merge-related reading
+    		my %substitutes;
+    		while( @rowobjs ) {
+    			my $thisr = shift @rowobjs;
+    			next unless $thisr;
+				next if exists $substitutes{$thisr->{t}->text};
+				# Make sure we don't have A <-> B substitutions.
+				$substitutes{$thisr->{t}->text} = $thisr->{t}->text;
+    			foreach my $thatr ( @rowobjs ) {
+    				next unless $thatr;
+    				next if exists $substitutes{$thatr->{t}->text};
+    				my $ttrel = $self->get_relationship( $thisr->{t}, $thatr->{t} );
+    				next unless $ttrel;
+    				next unless grep { $ttrel->type eq $_ } @{$opts->{mergetypes}};
+    				# If we have got this far then we need to merge them.
+    				$substitutes{$thatr->{t}->text} = $thisr->{t}->text;
+    			}
+    		}
+    		@row = map { $_ && exists $substitutes{$_} ? $substitutes{$_} : $_ } @row;
+    	}
         $csv->combine( @row );
         push( @result, $csv->string );
     }
@@ -1803,6 +1973,28 @@ sub reading_sequence {
     
     return @readings;
 }
+
+=head2 readings_at_rank( $rank )
+
+Returns a list of readings at a given rank, taken from the alignment table.
+
+=cut
+
+sub readings_at_rank {
+	my( $self, $rank, $nolacuna ) = @_;
+	my $table = $self->alignment_table;
+	# Table rank is real rank - 1.
+	my @elements = map { $_->{'tokens'}->[$rank-1] } @{$table->{'alignment'}};
+	my %readings;
+	foreach my $e ( @elements ) {
+		next unless ref( $e ) eq 'HASH';
+		next unless exists $e->{'t'};
+		my $rdg = $e->{'t'};
+		next if $nolacuna && $rdg->is_lacuna && $rdg->rank ne $rank;
+		$readings{$e->{'t'}->id} = $e->{'t'};
+	}
+	return values %readings;
+}		
 
 =head2 next_reading( $reading, $sigil );
 

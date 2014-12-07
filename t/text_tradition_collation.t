@@ -77,6 +77,8 @@ warnings_exist {
 	"Got expected relationship drop warning on parse";
 
 my $c = $t->collation;
+# Force the transitive propagation of all existing relationships.
+$c->relations->propagate_all_relationships();
 
 my %rdg_ids;
 map { $rdg_ids{$_} = 1 } $c->readings;
@@ -111,6 +113,35 @@ try {
 	is( $e->message, 'Cannot calculate ranks on a non-linear graph', 
 		"Rank calculation on merged graph threw an error" );
 }
+}
+
+
+
+# =begin testing
+{
+use Text::Tradition;
+
+my $t = Text::Tradition->new( input => 'CollateX', file => 't/data/CollateX-16.xml' );
+my $c = $t->collation;
+my $n = scalar $c->readings;
+$c->compress_readings();
+is( scalar $c->readings, $n - 6, "Compressing readings seems to work" );
+
+# Now put in a join-word and make sure the thing still works.
+my $t2 = Text::Tradition->new( input => 'CollateX', file => 't/data/CollateX-16.xml' );
+my $c2 = $t2->collation;
+# Split n21 ('unto') for testing purposes
+my $new_r = $c2->add_reading( { 'id' => 'n21p0', 'text' => 'un', 'join_next' => 1 } );
+my $old_r = $c2->reading( 'n21' );
+$old_r->alter_text( 'to' );
+$c2->del_path( 'n20', 'n21', 'A' );
+$c2->add_path( 'n20', 'n21p0', 'A' );
+$c2->add_path( 'n21p0', 'n21', 'A' );
+$c2->calculate_ranks();
+is( scalar $c2->readings, $n + 1, "We have our extra test reading" );
+$c2->compress_readings();
+is( scalar $c2->readings, $n - 6, "Compressing readings also works with join_next" );
+is( $c2->reading( 'n21p0' )->text, 'unto', "The joined word has no space" );
 }
 
 
@@ -181,6 +212,52 @@ try {
 	ok( 1, "Graph is still evidently whole" );
 } catch( Text::Tradition::Error $e ) {
 	ok( 0, "Caught a rank exception: " . $e->message );
+}
+}
+
+
+
+# =begin testing
+{
+use JSON qw/ from_json /;
+use Text::Tradition;
+
+my $t = Text::Tradition->new( 
+	'input' => 'Self',
+	'file' => 't/data/florilegium_graphml.xml' );
+my $c = $t->collation;
+	
+# Make a connection so we can test rank preservation
+$c->add_relationship( 'w91', 'w92', { type => 'grammatical' } );
+
+# Create an adjacency list of the whole thing; test the output.
+my $adj_whole = from_json( $c->as_adjacency_list() );
+is( scalar @$adj_whole, scalar $c->readings(), 
+	"Same number of nodes in graph and adjacency list" );
+my @adj_whole_edges;
+map { push( @adj_whole_edges, @{$_->{adjacent}} ) } @$adj_whole;
+is( scalar @adj_whole_edges, scalar $c->sequence->edges,
+	"Same number of edges in graph and adjacency list" );
+# Find the reading whose rank should be preserved
+my( $test_rdg ) = grep { $_->{id} eq 'w89' } @$adj_whole;
+my( $test_edge ) = grep { $_->{id} eq 'w92' } @{$test_rdg->{adjacent}};
+is( $test_edge->{minlen}, 2, "Rank of test reading is preserved" );
+
+# Now create an adjacency list of just a portion. w76 to w122
+my $adj_part = from_json( $c->as_adjacency_list(
+	{ from => $c->reading('w76')->rank,
+	  to   => $c->reading('w122')->rank }));
+is( scalar @$adj_part, 48, "Correct number of nodes in partial graph" );
+my @adj_part_edges;
+map { push( @adj_part_edges, @{$_->{adjacent}} ) } @$adj_part;
+is( scalar @adj_part_edges, 58,
+	"Same number of edges in partial graph and adjacency list" );
+# Check for consistency
+my %part_nodes;
+map { $part_nodes{$_->{id}} = 1 } @$adj_part;
+foreach my $edge ( @adj_part_edges ) {
+	my $testid = $edge->{id};
+	ok( $part_nodes{$testid}, "ID $testid referenced in edge is given as node" );
 }
 }
 
@@ -295,6 +372,27 @@ is( scalar( $csv->fields ), $WITS + $WITAC, "CSV has correct number of witness c
 @q_ac = grep { $_ eq 'Q__L' } $csv->fields;
 ok( @q_ac, "Found a sanitized layered witness" );
 is( $c->alignment_table, $table, "Request for CSV did not alter the alignment table" );
+
+# Test relationship collapse
+$c->add_relationship( $c->readings_at_rank( 37 ), { type => 'spelling' } );
+$c->add_relationship( $c->readings_at_rank( 60 ), { type => 'spelling' } );
+
+my $mergedtsv = $c->as_tsv({mergetypes => [ 'spelling', 'orthographic' ] });
+my $t4 = Text::Tradition->new( input => 'Tabular',
+							   name => 'test4',
+							   string => $mergedtsv,
+							   sep_char => "\t" );
+is( scalar $t4->collation->readings, $READINGS - 2, "Reparsed TSV merge collation has fewer readings" );
+is( scalar $t4->collation->paths, $PATHS - 4, "Reparsed TSV merge collation has fewer paths" );
+
+# Test non-ASCII sigla
+my $t5 = Text::Tradition->new( input => 'Tabular',
+							   name => 'nonascii',
+							   file => 't/data/armexample.xlsx',
+							   excel => 'xlsx' );
+my $awittsv = $t5->collation->as_tsv({ noac => 1, ascii => 1 });
+my @awitlines = split( /\n/, $awittsv );
+like( $awitlines[0], qr/_A_5315622/, "Found ASCII sigil variant in TSV" );
 }
 
 

@@ -46,6 +46,7 @@ t/data/Collatex-16.xml
 t/data/cx16.json
 t/data/florilegium.csv
 t/data/florilegium.dot
+t/data/florilegium_cx.xml
 t/data/florilegium_graphml.xml
 t/data/florilegium_tei_cte.xml
 t/data/florilegium_tei_ps.xml
@@ -70,4 +71,5 @@ t/text_tradition_parser_self.t
 t/text_tradition_parser_tabular.t
 t/text_tradition_parser_tei.t
 t/text_tradition_witness.t
+thischange.txt
 TODO

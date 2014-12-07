@@ -159,7 +159,18 @@ unless( $stemma_enabled ) {
 		$nst = Text::Tradition->new( 'input' => 'Self', 'file' => 't/data/lexformat.xml' );
 	} [qr/DROPPING stemmata/],
 		"Got expected stemma drop warning on parse";
+} else {
+	# Test parse of existing Stemweb job id
+	$t->set_stemweb_jobid( '1234' );
+	$graphml_str = $t->collation->as_graphml;
+	try {
+		$newt = Text::Tradition->new( 'input' => 'Self', 'string' => $graphml_str );
+		is( $newt->stemweb_jobid, '1234', "Stemweb job ID was reparsed" );
+	} catch {
+		ok( 0, "Existing stemweb job ID causes parser to explode" );
+	}
 }
+
 
 =end testing
 
@@ -173,11 +184,13 @@ sub parse {
     my( $graph_data, $rel_data ) = graphml_parse( $opts );
 
     my $collation = $tradition->collation;
+    my $tmeta = $tradition->meta;
+    my $cmeta = $collation->meta;
+
     my %witnesses;
     
     # print STDERR "Setting graph globals\n";
     $tradition->name( $graph_data->{'name'} );
-
     my $use_version;
     foreach my $gkey ( keys %{$graph_data->{'global'}} ) {
 		my $val = $graph_data->{'global'}->{$gkey};
@@ -206,10 +219,23 @@ sub parse {
 			} else {
 				warn( "DROPPING user assignment without a specified userstore" );
 			}
+		# Is this key an attribute of the tradition or collation?
+		} elsif( $tmeta->has_attribute( $gkey ) ) {
+			my $attr = $tmeta->get_attribute( $gkey );
+			warn( "Nonexistent tradition attribute $gkey" ) unless $attr;
+			my $method = $attr->get_write_method();
+			$tradition->$method( $val );
+		} elsif( $cmeta->has_attribute( $gkey ) ) {
+			my $attr = $cmeta->find_attribute_by_name( $gkey );
+			warn( "Nonexistent collation attribute $gkey" ) unless $attr;
+			my $method = $attr->get_write_method();
+			$collation->$method( $val );
+		# Or is it an indirect attribute or other method?
 		} elsif( $tradition->can( $gkey ) ) {
 			$tradition->$gkey( $val );
 		} elsif( $collation->can( $gkey ) ) {
 			$collation->$gkey( $val );
+		# Nope? Oh well.
 		} else {
 			warn( "DROPPING unsupported attribute $gkey" );
 		}
